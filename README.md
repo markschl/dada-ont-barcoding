@@ -28,6 +28,10 @@ procedure is applied instead.
 
 ## Documentation of full barcoding workflow
 
+[Go to documentation start page](https://markschl.github.io/dada-ont-barcoding)
+
+Topics:
+
 1. [Primer design](https://markschl.github.io/dada-ont-barcoding/primers)
    ([example report](https://markschl.github.io/dada-ont-barcoding/primer-design-example.html))
 1. [PCR, library preparation and sequencing](https://markschl.github.io/dada-ont-barcoding/lab)

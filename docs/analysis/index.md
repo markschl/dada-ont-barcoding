@@ -128,5 +128,5 @@ The analysis report will appear in `analysis/<run_name>/analysis.html`, along wi
 
 ### Final steps
 
-- [Manual curation](seq-curation.md)
+- [Manual curation](curation.md)
 - Delete `analysis/<run_name>/tmp` once the analysis is done (it may take a lot of space).
