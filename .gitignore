@@ -1,0 +1,15 @@
+_*
+*~
+.*
+!.gitignore
+!.github
+*.pdf
+*.Rproj
+
+/analysis/
+!/analysis/templates/*
+
+bin/
+taxdb/
+site/
+.Rproj.user

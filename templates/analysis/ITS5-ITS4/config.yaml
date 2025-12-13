@@ -1,0 +1,19 @@
+cores: 4
+
+demultiplex:
+  primer_max_err: 0.2
+  idx_max_diffs: 0
+  min_read_length: 200
+  error_threshold: 2.5
+
+taxonomy:
+    # UNITE database (https://doi.org/10.15156/BIO/3301243, all Eukaryotes, QIIME-formatted)
+    db_url: https://s3.hpc.ut.ee/plutof-public/original/0ee4ff53-bd04-454b-a937-af1f466bfe8b.tgz
+    db_type: unite
+    known_contaminants:
+      family:
+        - Aspergillaceae
+        - Capnodiaceae
+      genus:
+        - Vishniacozyma
+    kingdom: Fungi

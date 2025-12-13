@@ -1,0 +1,295 @@
+---
+title: Primer design for Nanopore barcoding with dual-indexing layout
+output:
+  html_document: default
+  pdf_document: default
+---
+
+```{r setup}
+knitr::knit_hooks$set(plot = function(x, options) paste("\n", knitr::hook_plot_tex(x, options), "\n"))
+
+hamming = function(x) {
+  x = lapply(x, utf8ToInt)
+  sapply(x, function(b1) sapply(x, function(b2) sum(b1 != b2)))
+}
+```
+
+
+## Settings
+
+Number of required rows/columns that form the unique barcode combinations with dual indexing (rows * columns), rows usually in multiples of 8 and columns in multiples of 12 to form a matrix of plates.
+
+```{r}
+required.fwd = 5 * 8
+required.rev = 3 * 12
+n_samples = required.fwd * required.rev
+```
+
+This gives `r n_samples` barcode combinations (assuming rows = fwd, cols = rev: `r round(required.fwd/8, 1)` x `r round(required.rev/12, 1)` = `r round(n_samples / 96, 2)` plates).
+
+Minimum distance between barcodes (see [Filtering](#filtering))
+
+```{r}
+# set as high as possible, but not as high that there are too 
+# little candidates for dimer/hairpin filtering
+min_dist = 4
+```
+
+
+## Download existing barcodes
+
+We use indexes from [Hawkins et al. (2018)](https://doi.org/10.1073/pnas.1802640115) (see GitHub repo  https://github.com/finkelsteinlab/freebarcodes). If looking at all possible barcodes that could arise from mutations, at least 1 difference is guaranteed, allowing for error correction. This is lower than the edit distance as barcodes are truncated on insertions, or downstream bases are included in case of deletions, which makes the situation more complicated, and the edit distance is not sufficient as a measure (not to speak of Hamming distance).
+
+The file naming: `barcodes9-1.txt` means 9bp barcodes with a minimum guaranteed distance of 1bp (assuming all possible sequencing errors that could occur, not just substitutions). For other possibilities see https://github.com/finkelsteinlab/freebarcodes/tree/master/barcodes
+
+
+```{r}
+bc_file = 'barcodes9-1.txt'
+path = paste0('https://raw.githubusercontent.com/finkelsteinlab/freebarcodes/refs/heads/master/barcodes/', bc_file)
+# path = 'freebarcodes-master/barcodes/barcodes9-1.txt'
+bc = read.delim(path, header=F)[[1]]
+names(bc) = sprintf("bc%03d", 1:length(bc))
+```
+
+```{r}
+bc.len = nchar(unname(bc[1]))
+bc.len
+length(bc)
+```
+
+A first check of the edit distance
+
+```{r}
+d = adist(bc)
+hist(d[lower.tri(d)], breaks='FD', main='Edit distance of unfiltered barcodes')
+DNABarcodes::analyse.barcodes(bc)
+```
+
+## Filtering
+
+Now see if the DNABarcodes package is happy with these barcodes (they have their own filtering). We limit to those with at least a Hamming distance of `r min_dist` (`min_dist` setting), since substitutions are still the most frequent type of error even with Nanopore. The GC content, etc. however seems fine.
+
+```{r}
+library(DNABarcodes)
+analyse.barcodes(bc)
+
+bc.filt = create.dnabarcodes(bc.len, dist=min_dist, pool=bc, metric="hamming", heuristic="conway", cores=1)
+names(bc.filt) = names(bc[match(bc.filt, bc)])
+bc.filt = bc.filt[order(names(bc.filt))]
+length(bc.filt)
+r = length(bc.filt) / max(required.fwd, required.rev)
+stopifnot(r >= 1.2)
+if (r < 1.5) {
+  warning('Consider lowering min_dist there is less than 1.5x the required number of barcodes available for selection')
+}
+analyse.barcodes(bc.filt)
+```
+
+We have `r length(bc.filt)` barcodes available after filtering. 
+
+Check the hamming distance, which is at least `r min_dist` as we wanted it to be.
+
+```{r}
+d = hamming(bc.filt)
+hist(d[lower.tri(d)], breaks='FD', main='Hamming distance of filtered barcodes')
+```
+
+Check the edit distance, even if it is not the best measure, since fewer mutations (Subst/In/Del) can be required to obtain the same barcode (see linked paper and ?create.dnabarcodes). It can go down to <`r min_dist` in few cases.
+
+```{r}
+d = adist(bc.filt)
+hist(d[lower.tri(d)], breaks='FD', main='Edit distance of filtered barcodes')
+```
+
+## Barcoded primers
+
+The barcode is simply inserted before the primer without any padding nucleotides.
+
+```{r}
+fwd_name = 'ITS5'
+fwd_seq = 'GGAAGTAAAAGTCGTAACAAGG'
+rev_name = 'ITS4'
+rev_seq = 'TCCTCCGCTTATTGATATGC'
+fwd.bc = paste0(bc.filt, fwd_seq)
+rev.bc = paste0(bc.filt, rev_seq)
+```
+
+
+### Hairpin and dimer filtering
+
+Dimer (min. hybridization energy) and hairpin (min. folding energy) calculation functions using OligoarrayAux similarly as does DECIPHER in findPrimers. See also the [documentation](https://www.unafold.org/OligoArrayAux/OligoArrayAux.pdf). The programs return [Gibbs free energy](https://en.wikipedia.org/wiki/Gibbs_free_energy), where more negative numbers mean stronger binding.
+
+```{r}
+dimer = function(seq1, seq2, temp=55, Na=50, Mg=3) {
+  args = c('-n', 'DNA', '-t', temp, '-T', temp, '-N', Na/1000, '-M', Mg/1000, '-E', '-q')
+  as.numeric(system2('hybrid-min', c(args, seq1, seq2), stdout=T))
+}
+hairpin = function(seq, temp=55, Na=50, Mg=3) {
+  args = c('-n', 'DNA', '-t', temp, '-T', temp, '-N', Na/1000, '-M', Mg/1000, '-E', '-q')
+  as.numeric(system2('hybrid-ss-min', c(args, seq), stdout=T))
+}
+```
+
+#### Hairpins
+
+Hairpins are mostly not bad, except for few, which we remove.
+
+```{r}
+dg.hairpin.f = sapply(fwd.bc, hairpin)
+dg.hairpin.r = sapply(rev.bc, hairpin)
+# check
+summary(dg.hairpin.f)
+hist(dg.hairpin.f, breaks='FD')
+summary(dg.hairpin.r)
+hist(dg.hairpin.r, breaks='FD')
+```
+
+
+Checking the worst oligo with https://eu.idtdna.com/calc/analyzer, the Tm of some barcode-primer hairpins is > 60°C, even >70°C. We remove everything below a certain (subjective) dG threshold.
+
+```{r}
+fwd.bc = fwd.bc[dg.hairpin.f >= -.5]
+rev.bc = rev.bc[dg.hairpin.r >= -.5]
+```
+
+
+#### Dimers
+
+For dimers, we do an all-to-all comparison to catch any problems that could arise in any of the combinations. Both homodimers and hetero-dimers should be found.
+
+```{r}
+dg.dimer = dg.dimer.orig = sapply(rev.bc, function(r) sapply(fwd.bc, function(f) dimer(f, r)))
+image(dg.dimer)
+```
+
+The distance matrix shows that some barcoded forward and reverse primers interact with only single other fusion primers, while others interact with *all* oligos on the opposite side (bright horizontal or vertical lines). This interaction must involve the internal primer sequence of one of them (not just the barcode-primer combination), as Gibbs free energy is consistently low for all comparisons.
+
+Worst interactions are:
+
+```{r}
+list_bad = function(d, n) {
+  d[lower.tri(d, T)] = NA
+  low.dg = head(sort(d), n)
+  # https://stackoverflow.com/questions/67143525/how-to-find-n-lowest-values-in-a-matrix-with-their-respective-rows-columns-indic
+  i = which(apply(d, 2, function(x) x %in% low.dg), arr.ind=T)
+  data.frame(fwd=rownames(d)[i[,1]], rev=colnames(d)[i[,2]], dG=d[i])
+}
+list_bad(dg.dimer.orig, 4)
+```
+
+We iteratively exclude the oligos with the strongest interactions using the following steps:
+
+1) Identify the matrix cell with the lowest dG
+2) decide whether to remove the forward or reverse primer: remove the one that results in a higher overall improvement (if removed). For this, we calculate the mean of all dG values < -1 in the remaining matrix (strongly negative values indicate potential oligo interactions). We remove the primer that leads to a higher `mean(dG[dG < -1])`. If we cannot remove one of the primers because we would end up with too few remaining, we remove the other one.
+
+We repeat steps 1-2 until we reach the required forward and reverse primer numbers
+
+```{r}
+dg.dimer = dg.dimer.orig
+
+score = function(x, threshold=-1) {
+  x = x[x < threshold]
+  mean(x)
+  # weighted.mean(x, -x)
+}
+
+while (T) {
+  # 1. identify strongest interaction
+  i = which(dg.dimer == min(dg.dimer), arr.ind=T)[1,]
+  
+  # 2. test which primer should be removed
+  df = score(dg.dimer[-i[1],])
+  dr = score(dg.dimer[,-i[2]])
+  if (df >= dr & nrow(dg.dimer) > required.fwd) {
+    cat("Removing fwd:", rownames(dg.dimer)[i[1]], "\n")
+    dg.dimer = dg.dimer[-i[1],]
+  } else if (ncol(dg.dimer) > required.rev) {
+    cat("Removing rev:", colnames(dg.dimer)[i[2]], "\n")
+    dg.dimer = dg.dimer[,-i[2]]
+  } else {
+    break
+  }
+  # image(dg.dimer)
+
+  cat(sprintf("dG min = %s, fwd: %d, rev: %d\n", 
+              paste(format(head(sort(dg.dimer[lower.tri(dg.dimer, T)]), 4), digits=4), collapse=', '),
+              nrow(dg.dimer), ncol(dg.dimer)))
+}
+
+image(dg.dimer)
+```
+
+The remaining primer combinations:
+
+```{r}
+sel.fwd.bc = rownames(dg.dimer)
+sel.rev.bc = colnames(dg.dimer)
+# assign names
+names(sel.fwd.bc) = names(bc[match(substr(sel.fwd.bc, 1, bc.len), bc)])
+names(sel.rev.bc) = names(bc[match(substr(sel.rev.bc, 1, bc.len), bc)])
+# dg.dimer2 = sapply(sel.rev.bc, function(r) sapply(sel.fwd.bc, function(f) dimer(f, r)))
+# stopifnot(dg.dimer == dg.dimer2)
+```
+
+Worst interactions in the remaining set are (check e.g. in Oligo Analyzer):
+
+```{r}
+list_bad(dg.dimer, 6)
+```
+
+
+## Write to file
+
+Write for ordering
+
+```{r}
+f = sel.fwd.bc
+names(f) = paste(fwd_name, names(f), sep='_')
+r = sel.rev.bc
+names(r) = paste(rev_name, names(r), sep='_')
+all.bc = c(f, r)
+d = data.frame(id=names(all.bc), seq=unname(all.bc))
+write.table(d, 'primers.tsv', sep='\t', row.names=F, col.names=F, quote=F)
+```
+
+## Combinations
+
+
+```{r}
+f.batch = ceiling(seq_along(sel.fwd.bc)/8) - 1
+f.coord = strsplit(intToUtf8(65 + seq(0, length(sel.fwd.bc) - 1) %% 8), '')[[1]]
+names(f.batch) = names(f.coord) = names(sel.fwd.bc)
+
+r.batch = ceiling(seq_along(sel.rev.bc)/12) - 1
+r.coord = sprintf("%02d", 1 + seq(0, length(sel.rev.bc) - 1) %% 12)
+names(r.batch) = names(r.coord) = names(sel.rev.bc)
+
+comb = expand.grid(fwd=names(sel.fwd.bc), rev=names(sel.rev.bc))
+comb$fwd_barcode = substr(sel.fwd.bc[comb$fwd], 1, bc.len)
+comb$rev_barcode = substr(sel.rev.bc[comb$rev], 1, bc.len)
+comb$fwd_rev = paste(comb$fwd, comb$rev, sep='_')
+comb = cbind(
+  plate = 1 + (max(f.batch) + 1) * r.batch[comb$rev] + f.batch[comb$fwd],
+  well = paste0(f.coord[comb$fwd], r.coord[comb$rev]),
+  comb
+)
+comb = comb[order(comb$plate),]
+comb = cbind(sample = 1:nrow(comb), comb)
+# no combination should be repeated
+stopifnot(comb[c('fwd_barcode', 'rev_barcode')] == unique(comb[c('fwd_barcode', 'rev_barcode')]))
+write.table(comb, 'combinations.tsv', sep='\t', row.names=T, col.names=NA, quote=F)
+```
+
+Write in plate format
+
+```{r}
+p = matrix(NA, nrow=length(sel.fwd.bc), ncol=length(sel.rev.bc),
+           dimnames=list(names(sel.fwd.bc), names(sel.rev.bc)))
+for (fwd in rownames(p)) {
+  row = p[fwd, ]
+  sel = match(paste(fwd, names(row), sep='_'), comb$fwd_rev)
+  p[fwd, ] = with(comb, sprintf("%d %s (%d)", sample, well, plate))[sel]
+}
+write.table(p, 'plates.tsv', sep='\t', row.names=T, col.names=NA, quote=F)
+```
+
