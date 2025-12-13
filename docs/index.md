@@ -1,10 +1,10 @@
 # Nanopore barcoding pipeline
 
-This R-based pipeline infers *specimen barcodes* from Nanopore sequencing data
+This R-based pipeline infers *specimen barcodes* Nanopore sequencing data
 with multiplexed samples.
 
 It uses a [DADA2](https://benjjneb.github.io/dada2)-based
-[clustering strategy](https://markschl.github.io/dada-ont-barcoding/analysis/workflow#details-on-the-clustering)
+[clustering strategy](analysis/workflow.md#details-on-the-clustering)
 and reports consensus sequences, separately for haplotypes and other sequence
 polymorphisms as well as possible.
 This requires that each amplicon is supported by at least a few error-free sequencing reads,
@@ -18,22 +18,18 @@ procedure is applied instead.
 - Automatic *taxonomic assignments* (currently implemented for the ITS marker)
   for validating the morphological identifications and auto-filtering of contaminants
 - Detailed output:
-    * *detailed processing report* (generated from `analysis.Rmd`)
-      ([example](https://markschl.github.io/dada-ont-barcoding/analysis-example.html))
-    * *Excel table* with detailed overview of sequences and possible issues
-      (see [curation](https://markschl.github.io/dada-ont-barcoding/curation))
-    * *BAM/FASTA files* that assist with [manual curation](https://markschl.github.io/dada-ont-barcoding/curation)
+    * *detailed processing report* (generated from `analysis.Rmd`) ([example](analysis-example.html))
+    * *Excel table* with detailed overview of sequences and possible issues (see [curation](curation.md))
+    * *BAM/FASTA files* that assist with [manual curation](curation.md)
 
-[More on the clustering workflow and other processing steps](https://markschl.github.io/dada-ont-barcoding/analysis/workflow)
+[More on the clustering workflow and other processing steps](analysis/workflow.md)
 
 ## Documentation of full barcoding workflow
 
-1. [Primer design](https://markschl.github.io/dada-ont-barcoding/primers)
-   ([example report](https://markschl.github.io/dada-ont-barcoding/primer-design-example.html))
-1. [PCR, library preparation and sequencing](https://markschl.github.io/dada-ont-barcoding/lab)
-2. [Infer barcode sequences](https://markschl.github.io/dada-ont-barcoding/analysis) using this pipeline
-   ([example report](https://markschl.github.io/dada-ont-barcoding/analysis-example.html))
-3. [Manual curation](https://markschl.github.io/dada-ont-barcoding/curation)
+1. [Primer design](primers.md) ([example report](primer-design-example.html))
+1. [PCR, library preparation and sequencing](lab.md)
+2. [Infer barcode sequences](analysis) using this pipeline ([example report](analysis-example.html))
+3. [Manual curation](curation.md)
 
 ## Useful references
 

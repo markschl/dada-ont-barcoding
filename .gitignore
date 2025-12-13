@@ -1,15 +1,15 @@
 _*
 *~
-.*
-!.gitignore
-!.github
 *.pdf
 *.Rproj
 
+analysis.html
+analysis.pdf
 /analysis/
 !/analysis/templates/*
 
 bin/
 taxdb/
 site/
-.Rproj.user
+.R*
+.venv/
