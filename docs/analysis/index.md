@@ -48,7 +48,7 @@ brew install samtools minimap2 vsearch
 > conda activate dada-ont-barcoding
 > ```
 
-For all the missing tools (including *seqtool*) there is an *installation script**,
+For all the missing tools (including *seqtool*) there is an *installation script*,
 which places them in the `bin` subdirectory. *Samtools* and *minimap2* need to be compiled
 from source (UNIX build environment required).
 Run the following in a Bash console:
@@ -128,5 +128,5 @@ The analysis report will appear in `analysis/<run_name>/analysis.html`, along wi
 
 ### Final steps
 
-- [Manual curation](curation.md)
+- [Manual curation](../curation.md)
 - Delete `analysis/<run_name>/tmp` once the analysis is done (it may take a lot of space).

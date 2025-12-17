@@ -10,11 +10,20 @@
 
 More details are given in `analysis.Rmd`, or the generated report.
 
+## Primer search
+
+It is assumed that sample-specific tags are attached to primers on both sides (dual indexing):
+
+<span style="color: #2a90b8ff">TAG1</span><span style="color: #b82ab3ff">FPRIMER</span>BARCODESEQUENCE<span style="color: #b82ab3ff">RPRIMER</span><span style="color: #2a90b8ff">TAG2</span>
+
+**Combining multiple amplicons** is possible. Primers are searched in the order that amplicons appear in the sample sheet. Therefore, if there are *nested amplicons*, the shorter one should be placed *at the end* in the sheet.
+
+
 ## Details on the clustering
 
 The procedure starts with DADA2 clustering, followed by an alignment to the inferred ASV sequence and consensus building. Additional steps may follow depending on whether the consensus is unambiguous (each alignment column supported by enough identical bases), or not.
 
-All the settings are documented on top of the *get_barcodes* function in [cluster.R](https://github.com/markschl/dada-ont-barcoding/R/cluster.R). The defaults can be changed in the `cluster` section of `config.yaml`.
+All the settings are documented on top of the *get_barcodes* function in [cluster.R](https://github.com/markschl/dada-ont-barcoding/blob/main/R/cluster.R). The defaults can be changed in the `cluster` section of `config.yaml`.
 
 ![procedure](img/cluster-flowchart.png)
 

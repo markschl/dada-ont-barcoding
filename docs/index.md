@@ -1,35 +1,47 @@
 # Nanopore barcoding pipeline
 
-This R-based pipeline infers *specimen barcodes* Nanopore sequencing data
+This R-based pipeline infers *specimen barcodes* from Nanopore sequencing data
 with multiplexed samples.
 
 It uses a [DADA2](https://benjjneb.github.io/dada2)-based
-[clustering strategy](analysis/workflow.md#details-on-the-clustering)
-and reports consensus sequences, separately for haplotypes and other sequence
-polymorphisms as well as possible.
-This requires that each amplicon is supported by at least a few error-free sequencing reads,
-which is usually the case with the latest R10.4 chemistry, given that sequences
-are not overly long (tested with 500-1000 bp amplicons).
+[clustering strategy](workflow.md#details-on-the-clustering) with some refinements with the aim to resolve
+haplotypes and other sequence polymorphisms as well as possible.
+
+The DADA2 denoising method requires that each amplicon is supported by at least a
+few error-free sequencing reads, which is usually the case with the latest R10.4 chemistry,
+given that sequences are not overly long (tested with 500-1000 bp amplicons).
 In case of low sequencing depths (with low replication), a fixed-threshold clustering
 procedure is applied instead.
 
-**Other features**
+## Features
 
-- Automatic *taxonomic assignments* (currently implemented for the ITS marker)
-  for validating the morphological identifications and auto-filtering of contaminants
-- Detailed output:
-    * *detailed processing report* (generated from `analysis.Rmd`) ([example](analysis-example.html))
-    * *Excel table* with detailed overview of sequences and possible issues (see [curation](curation.md))
-    * *BAM/FASTA files* that assist with [manual curation](curation.md)
+* Recognizes and removes primers with sample-specific tags for one or **multiple pooled amplicons**
+  and does quality filtering
+* Automatic **taxonomic assignments** based on user-defined reference databases
+* Matching of morphological identifications with the sequence-based taxonomy
+  and a procedure to automatically **recognize/remove contaminants**
+* Detailed **output**:
+    - *detailed processing report* (generated from `analysis.Rmd`)
+      ([example](analysis-example.html))
+    - *Excel table* with the *consensus sequences*, taxonomy and possible issues
+      (see [curation](curation.md))
+    - *BAM/FASTA alignment files* that can be viewed during
+      [manual curation](curation.md)
 
 [More on the clustering workflow and other processing steps](analysis/workflow.md)
 
 ## Documentation of full barcoding workflow
 
-1. [Primer design](primers.md) ([example report](primer-design-example.html))
-1. [PCR, library preparation and sequencing](lab.md)
-2. [Infer barcode sequences](analysis) using this pipeline ([example report](analysis-example.html))
-3. [Manual curation](curation.md)
+[Go to documentation start page](https://markschl.github.io/dada-ont-barcoding)
+
+Topics:
+
+1. [Primer design](primers.md)
+   ([example report](primer-design-example.html))
+2. [PCR, library preparation and sequencing](lab.md)
+3. [Infer barcode sequences](analysis) using this pipeline
+   ([example report](analysis-example.html))
+4. [Manual curation](curation.md)
 
 ## Useful references
 
