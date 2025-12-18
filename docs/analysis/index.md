@@ -76,7 +76,7 @@ If starting from the raw squiggle data, follow [this tutorial](basecalling.md)
 The directory structure:
 
 ```
-ont-barcoding/
+dada-ont-barcoding/
  ├─ analysis.Rmd               Main R-Markdown document (edit e.g. in RStudio)
  ├─ run_analysis.R             Run the analysis without RStudio
  ├─ analysis/
@@ -98,17 +98,18 @@ ont-barcoding/
 
 - Open [`analysis.Rmd`](https://github.com/markschl/dada-ont-barcoding/analysis.Rmd) in RStudio
 - Edit the run name in the header (`params: <run_name>`). 
-  It has to be identical to the prepared run directory (`analysis/<run_name>`).
+  It has to be *identical* to the prepared run directory (`analysis/<run_name>`).
 - Run all chunks, check the results, maybe adjust settings in `config.yaml`
 
-This may take from 15-20 minutes for ~3M reads up to a one hour for a larger MinION run
+**Runtime**: It may take 15-20 minutes for ~3M reads up to a one hour for a larger MinION run
 with ~15M reads (make sure to set multiple `cores` in `config.yaml`).
 Re-running will be faster thanks to the intermediate files in `analysis/<run_name>/tmp`.
 
+> *Careful* with changing settings and re-running:
 > Intermediate files in `tmp` (such as the `demux` folder or `cluster.rds`)
 > need to be deleted manually if settings are changed.
 
-> Consider generating a HTML/PDF report (Knit button) and moving it to `analysis/<run_name>`.
+> Consider generating a *HTML/PDF report* (Knit button) and moving it to `analysis/<run_name>`.
 
 ### In the Bash console
 
