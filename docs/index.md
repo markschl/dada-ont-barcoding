@@ -4,7 +4,7 @@ This R-based pipeline infers *specimen barcodes* from Nanopore sequencing data
 with multiplexed samples.
 
 It uses a [DADA2](https://benjjneb.github.io/dada2)-based
-[clustering strategy](workflow.md#details-on-the-clustering) with some refinements with the aim to resolve
+[clustering strategy](analysis/workflow.md#details-on-the-clustering) with some refinements with the aim to resolve
 haplotypes and other sequence polymorphisms as well as possible.
 
 The DADA2 denoising method requires that each amplicon is supported by at least a
@@ -31,8 +31,6 @@ procedure is applied instead.
 [More on the clustering workflow and other processing steps](analysis/workflow.md)
 
 ## Documentation of full barcoding workflow
-
-[Go to documentation start page](https://markschl.github.io/dada-ont-barcoding)
 
 Topics:
 

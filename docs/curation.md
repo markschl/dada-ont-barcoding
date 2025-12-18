@@ -30,7 +30,7 @@ The **tax-mimatch** issue indicates a mismatch between the taxonomic name in the
 - mis-identified specimen
 - something got mixed up when preparing specimens/extracting/amplifying
 - the automatic taxonomy assignment of barcode sequences did not work correctly, or the taxonomic lineages obtained from GBIF are not correct
-- contamination not automatically recognized ([how it works](workflow.md#taxonomic-assignments))
+- contamination not automatically recognized ([how it works](analysis/workflow.md#taxonomic-assignments))
 
 It is advisable to check the *details* worksheet: Copy the sample barcode combination (e.g. *bc018-bc183*) and filter the *details* table to list *all* sequences from this sample. The *group* column indicates the taxon cluster (the top being the one shown in the main table).
 
@@ -76,9 +76,11 @@ In this case, a long homopolymer stretch results in an unclear sequence.
     > reference database and the
     > [confidence threshold](https://github.com/markschl/dada-ont-barcoding/blob/main/templates/analysis/config.commented.yaml)
 
--   **contamination:** The most abundant taxon is suspected to be a
-    contamination and was therefore ignored.
-    It is still listed in the "details" sheet, and manual inspection of at least
+-   **contamination:** The most abundant taxon is suspected to be a contaminating
+    sequence and was therefore ignored.
+    This happens if the prepared specimen was not "pure", and DNA from the host or
+    another specie was co-amplified.
+    The top taxon is still listed in the "details" sheet, and manual inspection of at least
     part of the putative contaminants is recommended to ensure that there are
     no errors in the automatic ranking
     (see also [*contam_rank_delta* setting](https://github.com/markschl/dada-ont-barcoding/blob/main/templates/analysis/config.commented.yaml))
