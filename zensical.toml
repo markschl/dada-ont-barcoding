@@ -4,6 +4,7 @@ site_description = " Infer DNA barcodes fom recent (R10.4) Nanopore sequence dat
 site_author = "Markus Schlegel"
 site_url = "markschl.github.io/dada-ont-barcoding"
 repo_url = "https://github.com/markschl/dada-ont-barcoding"
+edit_uri = "edit/main/docs/"
 nav = [
   "index.md",
   "primers.md",
