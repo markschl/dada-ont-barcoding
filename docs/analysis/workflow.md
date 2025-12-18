@@ -16,7 +16,7 @@ It is assumed that sample-specific tags are attached to primers on both sides (d
 
 <span style="color: #2a90b8ff">TAG1</span><span style="color: #b82ab3ff">FPRIMER</span>BARCODESEQUENCE<span style="color: #b82ab3ff">RPRIMER</span><span style="color: #2a90b8ff">TAG2</span>
 
-**Combining multiple amplicons** is possible. Primers are searched in the order that amplicons appear in the sample sheet. Therefore, if there are *nested amplicons*, the shorter one should be placed *at the start* in the sheet.
+**Combining multiple amplicons** is possible. Primers are searched in the order that amplicons appear in the sample sheet. Therefore, if there are *nested amplicons*, the shorter one should be placed *at the end* in the sheet.
 
 
 ## Details on the clustering
