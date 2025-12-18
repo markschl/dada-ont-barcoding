@@ -1,4 +1,5 @@
-# Number of CPU cores to use for computations
+# Number of parallel processes (threads) to run simultaneously for computations
+# (more = faster, but more memory;  for clustering the usage can sometimes be 3GB per core)
 cores: 4
 
 # Sample de-multiplexing
@@ -9,8 +10,8 @@ demultiplex:
   # maximum number of differences (substitutions, InDels) when
   # searching for the barcodes (don't set too high!)
   idx_max_diffs: 0
-  # minimum read length (make sure it is shorter than your barcode)
-  min_read_length: 200
+  # minimum read length: make sure it is shorter than your barcode(s)
+  min_barcode_length: 50
   # Maximum estimated sequencing errors allowed (based on quality scores)
   # This may be adjusted based on how Figures 4 and 5 look like.
   error_threshold: 2.5
@@ -19,12 +20,12 @@ demultiplex:
 # For more settings see also get_barcodes() function in R/cluster.R
 cluster:
   # use a maximum of N reads from each sample for denoising
-  # (lower = faster, but less precise)
+  # lower = faster, but less precise
   max_sample_depth: 5000
 
   # the minimum number of supporting reads needed for sequences to show up
   # in the analysis (lower -> rare variants show up in the analysis, but more noise)
-  min_haplo_depth: 3
+  min_seq_abund: 3
 
   # frequency threshold for consensus: be cautiuous with values < 60% (may be lowest safe value)
   # higer values -> more conservative, more ambiguities will appear, and homopolymer
@@ -32,28 +33,44 @@ cluster:
   consensus_threshold: 0.65
 
 taxonomy:
-    # Bootstrap confidence threshold for taxonomic assignments
-    # with SINTAX
-    confidence_threshold: 0.8
+  # Bootstrap confidence threshold for taxonomic assignments
+  # with SINTAX
+  confidence_threshold: 0.8
 
-    # UNITE database (https://doi.org/10.15156/BIO/3301243, all Eukaryotes, QIIME-formatted)
-    db_url: https://s3.hpc.ut.ee/plutof-public/original/0ee4ff53-bd04-454b-a937-af1f466bfe8b.tgz
+  # UNITE database (https://doi.org/10.15156/BIO/3301243, all Eukaryotes, QIIME-formatted)
+  db_url: https://s3.hpc.ut.ee/plutof-public/original/0ee4ff53-bd04-454b-a937-af1f466bfe8b.tgz
 
-    # taxonomy database type
-    # (currently, only "unite" is a valid choice)
-    db_type: unite
+  # taxonomy database type
+  # (currently, only "unite" is a valid choice)
+  db_type: unite
 
-    # known common contaminants (always flagged)
-    known_contaminants:
-      family:
-        - Aspergillaceae
-        - Capnodiaceae
-      genus:
-        - Vishniacozyma
+  # known common contaminants (always flagged)
+  known_contaminants:
+    family:
+      - Aspergillaceae
+      - Capnodiaceae
 
-    # specify kingdom if the taxonomy database contains taxa *mostly* from one kingdom
-    # (may help with GBIF name matching)
-    kingdom: Fungi
+  # specify kingdom if the taxonomy database contains taxa *mostly* from one kingdom
+  # (may help with GBIF name matching)
+  kingdom: Fungi
+
+  # This setting configures the "sensitivity" of the contaminant detection
+  # (lower = more sensitive, but also more false classifications):
+  # When comparing the morphological taxon (*morpho-taxon* column) with the automatic
+  # sequence-based identification, a lower-abundance taxon needs to have at least
+  # `contam_rank_delta` more matching ranks in the taxonomic lineages than the
+  # most abundant taxon for it to be up-ranked and the abundant taxon being
+  # flagged as contamination.
+  # The default of 3 seems to work well in most cases, but e.g. if *morpho-taxon*
+  # is only a phylum-level name, consider lowering to 2.
+  contam_rank_delta: 3
+
+  # It is also possible to specify amplicon-specific options, which override the
+  # above settings
+  # (including the reference database, for other markers...)
+  ITS1F_ITS4:
+    contam_rank_delta: 2
+
 
 report:
   # Sequencing depth threshold regarded as critical, below which there

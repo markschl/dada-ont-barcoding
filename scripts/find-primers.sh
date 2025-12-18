@@ -9,6 +9,7 @@ overwrite=false
 primer_mismatch_rate=0.2
 bc_max_mismatches=1
 artifact_search_err_rate=0.2
+min_len=50
 compr=zst
 st=st
 ncores=1
@@ -23,6 +24,7 @@ $(basename "$0") [-h] [options] reads.fastq[.gz] seq_prefix, reads.fastq[.gz|bz2
     -h                show this help text.
     -o                the output directory containing the demultiplexed and 
                       discarded reads [default = <input>_demux]
+    -l                the minimum read length [default = $min_len]
     -p                the maximum mismatch rate allowed in primers [default = $primer_mismatch_rate]
     -b                the maximum number of mismatches in barcodes for reads to be
                       included in <outdir>/demux.fastq.$compr [default = $bc_max_mismatches]
@@ -45,6 +47,7 @@ outdir/
   demux.fastq.$compr                demultiplexed reads
   no_primer.<fwd/rev>.fastq.$compr  reads without forward/reverse primers
   no_index.<fwd/rev>.fastq.$compr   reads without forward/reverse sample indexes
+  too_short.<fwd/rev>.fastq.$compr  reads shorter than $min_len
   fusion_artifact.fastq.$compr      possible concatenated artifacts (primers found in trimmed reads)
   read_counts.tsv                   read counts for all the listed FASTQ files
   primer_positions.tsv              primer position statistics
@@ -55,13 +58,14 @@ outdir/
 
 # TODO: balance parallel calculations
 
-while getopts "ho:p:b:u:wt:s:" opt; do
+while getopts "ho:l:p:b:u:wt:s:" opt; do
     case "$opt" in
     h)
         echo "$usage" >&2
         exit 0
         ;;
     o) outdir=$OPTARG ;;
+    l) min_len=$OPTARG ;;
     p) primer_mismatch_rate=$OPTARG ;;
     b) bc_max_mismatches=$OPTARG ;;
     u) artifact_search_err_rate=$OPTARG ;;
@@ -143,6 +147,7 @@ echo "Searching for primers in forward orientation..." >&2
 
 $st set -i {seq_num} $fastq_input | # create short headers to save space
     $st del -d --fq |
+    $st filter --fq "seqlen >= $min_len" --dropped "$outdir/too_short.$fq" |
     $st find "file:$fwd_primers" \
         -R $primer_mismatch_rate \
         --in-order \
@@ -156,7 +161,7 @@ $st set -i {seq_num} $fastq_input | # create short headers to save space
         -f --dropped "$outdir/no_primer.rev.$fq" \
         -a r={match_neg_end} -a rl={match_len} -a rm={match_diffs} |
     $st trim --fq "{num(attr('f')) - $f_bc_len}:{num(attr('r')) + $r_bc_len}" \
-        >$outdir/pre_trim.fastq
+        >"$outdir/primers_trimmed.fastq"
 
 echo "Searching for primers in reverse orientation..." >&2
 
@@ -174,7 +179,7 @@ $st find "file:$rev_primers" "$outdir/_no_fwd_primer.fastq" \
         -a f={match_neg_end} -a fl={match_len} -a fm={match_diffs} |
     $st trim --fq "{num(attr('r')) - $r_bc_len}:{num(attr('f')) + $f_bc_len}" |
     $st revcomp --fq \
-        >>"$outdir/pre_trim.fastq"
+        >>"$outdir/primers_trimmed.fastq"
 
 rm "$outdir/_no_fwd_primer.fastq"
 
@@ -183,7 +188,7 @@ echo "Searching for sample indexes..." >&2
 all_primers="$outdir/_all_primers.fasta"
 cat "$fwd_primers" "$rev_primers" "$rev_primers_rc" "$fwd_primers_rc" >"$all_primers"
 
-$st find "file:$fwd_bc" "$outdir/pre_trim.fastq" \
+$st find "file:$fwd_bc" "$outdir/primers_trimmed.fastq" \
     --rng ":$f_bc_len" --anchor-end 0 \
     -D $bc_max_mismatches \
     -t $ncores --seqtype dna \
@@ -203,12 +208,12 @@ $st find "file:$fwd_bc" "$outdir/pre_trim.fastq" \
         --dropped "$outdir/fusion_artifact.$fq" \
         -t $ncores --seqtype dna --fq |
     $st filter --fq 'opt_attr("fbc2.m") === undefined && opt_attr("rbc2.m") === undefined' \
-        --dropped $outdir/ambiguous_barcode.$fq \
+        --dropped "$outdir/ambiguous_barcode.$fq" |
+    $st filter --fq "seqlen >= $min_len" --dropped "$outdir/too_short2.$fq" \
         -o "$demux_out"
 
-#cutadapt -j $cores -e 0 --no-indels -g '^file:fwd_bc.fasta' --suffix ' f={name}' trim.fastq |
-#  cutadapt -j $cores -e 0 --no-indels -a 'file$:rev_bc_rc.fasta' --suffix ' r={name}' - |
-#  $st split --fq -po 'demux/{attr(f)}-{attr(r)}.fastq.gz'
+cat "$outdir/too_short2.$fq" >> "$outdir/too_short.$fq"
+rm "$outdir/too_short2.$fq"
 
 echo "Assembling read statistics..." >&2
 
@@ -218,6 +223,8 @@ $st count \
   "$outdir"/no_primer.*.$fq \
   "$outdir"/no_index.*.$fq \
   "$outdir"/fusion_artifact.$fq \
+  "$outdir/too_short.$fq" \
+  "$outdir/ambiguous_barcode.$fq" \
   "$demux_out" >>"$outdir"/demux_stats.tsv
 
 header="exp_err\tf_primer_mis\tr_primer_mis\tf_bc_mis\tr_bc_mis\tf_bc2_mis\tr_bc2_mis\tcount"
@@ -229,6 +236,9 @@ $st count \
   -k "opt_attr('fbc2.m')" -k "opt_attr('rbc2.m')" \
   "$outdir"/no_primer.*.$fq \
   "$outdir"/no_index.*.$fq \
+  "$outdir/too_short.$fq" \
+  "$outdir"/fusion_artifact.$fq \
+  "$outdir/ambiguous_barcode.$fq" \
   "$demux_out" \
   >>"$outdir/read_stats.tsv"
 
@@ -245,4 +255,4 @@ $st count \
   >> "$outdir/length_stats.tsv"
 
 # clean up
-rm -f "$outdir/pre_trim.fastq" "$outdir"/_*.fasta
+rm -f "$outdir/primers_trimmed.fastq" "$outdir"/_*.fasta

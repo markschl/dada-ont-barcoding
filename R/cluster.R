@@ -55,11 +55,11 @@ get_barcodes_export <- c(
 #'   *Note*: *error-free* does not mean *identical*, as DADA2 only considers
 #'   substitutions, and there can still be InDels, so `n0` is always equal or higher
 #'   to the number of identical sequences.
-#' @param min_haplo_depth minimum number of supporting reads needed for haplotype
-#'   clusters to be included
-#' @param min_haplo_freq frequency threshold to consider clusters (ASVs) as
-#'    haplotypes, not noise (relative to total abundance within all haplotypes of a
-#'    source tissue, as clustered with `cluster_threshold`)
+#' @param min_seq_abund minimum number of supporting reads needed for any barcode
+#'   sequence variant to be included in the results
+#' @param min_variant_freq frequency threshold to consider separate sequences (ASVs)
+#'    of the same taxon (as clustered with `cluster_threshold`) as "real" polymorphisms
+#'    (haplotypes), not noise.
 #' @param max_sample_depth read a maximum of `max_sample_depth` demultiplexed reads
 #'    from the input file (`fq`) for the denoising/clustering
 #' @param consensus_max_depth maximum number sequences mapped against the
@@ -110,13 +110,13 @@ get_barcodes <- function(fq,
                         omegaA_iter_threshold = 1000,
                         dada_min_identical = 2,
                         dada_min_n0 = 4,
-                        min_haplo_depth = 3,
+                        min_seq_abund = 3,
                         max_sample_depth = 5000,
                         consensus_max_depth = 3000,
                         consensus_threshold = 0.65,
                         consensus_by_qual = TRUE,
                         cluster_threshold = 0.97,
-                        min_haplo_freq = 0.2,
+                        min_variant_freq = 0.2,
                         split_min_identical = dada_min_identical,
                         max_split_ratio = 3,
                         cores = 1,
@@ -215,7 +215,7 @@ get_barcodes <- function(fq,
       )
       d$seq_indices = split(seq_along(reads), cl)[d$id]
       
-      d <- d[d$abundance >= min_haplo_depth, ]
+      d <- d[d$abundance >= min_seq_abund, ]
       # tictoc::toc()
       if (verbose)
         cat(
@@ -230,13 +230,13 @@ get_barcodes <- function(fq,
           file = stderr()
         )
       # Attemting another DADA2 denoising with higher OMEGA_A does not make sense,
-      # as it will not yield more identical seqs. -> stop
+      # as it will not yield more identical duplicates -> stop
       break
       
     } # low-coverage end
     
     # depth filter
-    d <- d[d$abundance >= min_haplo_depth, ]
+    d <- d[d$abundance >= min_seq_abund, ]
     
     # post-cluster to group haplotypes by (putative) source organism tissue
     # TODO: cluster by consensus? should make little difference
@@ -308,7 +308,7 @@ get_barcodes <- function(fq,
     # determine number of haplotypes
     cl1 <- d$group[1]
     cl1_abund <- d$abundance[d$group == cl1]
-    nhap <- sum(cl1_abund >= min_haplo_freq * sum(cl1_abund))
+    nhap <- sum(cl1_abund >= min_variant_freq * sum(cl1_abund))
     if (verbose) {
       cat(
         sprintf(
@@ -357,29 +357,36 @@ get_barcodes <- function(fq,
   } # end of loop
   
   if (nrow(d) == 0) {
+    unlink(tmp_dir, TRUE)
     return(NULL)
   }
   
+  # flag rare sequence variation
+  d$is_rare <- as.logical(ave(d$abundance, d$group, 
+                              FUN=function(x) x / sum(x) < min_variant_freq))
+  
   # Create final BAM files:
-  # - select clusters/haplotypes above min_haplo_depth
+  # - select clusters/haplotypes above min_seq_abund and exclude
   # - remap reads to the consensus if the consensus is not identical to the reference sequence
   #   (as it is the consensus that we will report)
   chosen_round_prefix <- file.path(tmp_dir, paste0('round_', dada_attempt))
-  # We have to use the consensus if there is ambiguous bases or differences to the reference
-  use_consensus <- is.na(d$consensus_diffs) | d$consensus_diffs > 0 | d$consensus_ambigs > 0
+  # We have to re-map to the consensus if there are ambiguous bases or
+  # any differences to the dominant ASV/unique split haplotype
+  d.sel <- d[!d$is_rare,]
+  use_consensus <- with(d.sel, is.na(consensus_diffs) | consensus_diffs > 0 | consensus_ambigs > 0)
   # cat('assemble output '); tictoc::tic()
   if (all(!use_consensus)) {
     # TODO: if all refs are chosen from the source BAM file, then this is
     # not very efficient (simple copying would suffice); this may be checked in merge_bam()
     merge_bam(
       out_prefix = out_prefix,
-      list(list(chosen_round_prefix, d$id)),
+      list(list(chosen_round_prefix, d.sel$id)),
       cores = cores,
       samtools = samtools
     )
   } else {
-    sel_reads <- reads[unlist(d$seq_indices[use_consensus])]
-    ref_seq <- setNames(d$consensus[use_consensus], d$id[use_consensus])
+    sel_reads <- reads[unlist(d.sel$seq_indices[use_consensus])]
+    ref_seq <- setNames(d.sel$consensus[use_consensus], d.sel$id[use_consensus])
     remap_prefix <- if (all(use_consensus)) {
       out_prefix
     } else {
@@ -397,12 +404,12 @@ get_barcodes <- function(fq,
       samtools = samtools
     )
     stopifnot(!is.na(cons$consensus))
-    cons_same <- d$consensus[use_consensus] == cons$consensus
+    cons_same <- d.sel$consensus[use_consensus] == cons$consensus
     if (any(!cons_same)) {
       # TODO: should not (and does not seem to) happen often,
       # but it is possible -> should rerun?
-      d$message[use_consensus][!cons_same] <- paste0(
-        d$message[use_consensus][!cons_same],
+      d.sel$message[use_consensus][!cons_same] <- paste0(
+        d.sel$message[use_consensus][!cons_same],
         'Re-mapping to consensus gives another consensus! '
       )
     }
@@ -410,8 +417,8 @@ get_barcodes <- function(fq,
       merge_bam(
         out_prefix = out_prefix,
         list(
-          list(remap_prefix, d$id[use_consensus]),
-          list(chosen_round_prefix, d$id[!use_consensus])
+          list(remap_prefix, d.sel$id[use_consensus]),
+          list(chosen_round_prefix, d.sel$id[!use_consensus])
         ),
         cores = cores,
         samtools = samtools
@@ -431,10 +438,6 @@ get_barcodes <- function(fq,
   l <- rle(utf8ToInt(d$consensus[1]))$lengths
   d$max_homopoly_len = max(l)
   
-  # flag rare haplotypes
-  d$is_rare <- as.logical(ave(d$abundance, d$group, 
-                              FUN=function(x) x / sum(x) < min_haplo_freq))
-
   attributes(d)[names(dada_detail)] = dada_detail
   attr(d, 'omega_a') = dada_omega_a[dada_attempt]
   d
@@ -476,18 +479,18 @@ align_top <- function(d,
   }
 }
 
-dada_learn_errors <- function(fq_paths, omega_a = 1e-20, cores = 1) {
+dada_learn_errors <- function(fq_paths, omega_a = 1e-20, cores = 1, ...) {
   # To be sure we increase the NW alignment band size,
   # which is recommended for technologies with potentially some InDels (454, PacBio)
   # and also applies for Nanopore.
   dada2::learnErrors(fq_paths,
-                     nbases = 1e8,
                      BAND_SIZE = 32,
                      qualityType = 'FastqQuality',
                      OMEGA_A = omega_a,
                      # this setting is hard-coded in denoise_dada2
                      OMEGA_C = 1e-10,
                      multithread = cores, 
+                     ...,
                      verbose = 0)
   
 }
@@ -776,6 +779,7 @@ merge_bam <- function(out_prefix,
     stderr = TRUE,
     stdout = TRUE
   )
+  stopifnot(!grepl('invalid region or unknown reference', msg))
   if (length(msg) > 0 && grepl('coordinate sort to be lost', msg, fixed = TRUE)) {
     # resort if multiple were merged (can sometimes happen)
     # https://github.com/samtools/samtools/issues/2159

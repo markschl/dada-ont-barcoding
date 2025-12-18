@@ -24,7 +24,7 @@ Run name: *`r params$run_name`*
 
 Date: *`r format(Sys.time(), '%d %B, %Y')`*
 
-Analyzed with *[dada-ont-barcoding](https://github.com/markschl/dada-ont-barcoding), version: `r params$version`*
+Analyzed with [*dada-ont-barcoding*](https://github.com/markschl/dada-ont-barcoding)*, version: `r params$version`*
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = FALSE)
@@ -38,14 +38,13 @@ h3 { font-size: 14px; }
 blockquote { font-size: 14px; }
 ```
 
-
 # The workflow (in short)
 
-1) Search the primers and short sample indexes (located up-/downstream of the primer sequences)
-2) Infer the barcode sequences with [DADA2](https://benjjneb.github.io/dada2) and/or fixed-threshold clustering (for low-coverage variants), align and infer the consensus
-3) Auto-assign the taxonomy and compare with the name given by morphological identification (if present) to validate and check for contamination.
-4) Compare with already known sequences (if present)
-5) Export summary table, which can be further manually curated
+1)  Search the primers and short sample indexes (located up-/downstream of the primer sequences)
+2)  Infer the barcode sequences with [DADA2](https://benjjneb.github.io/dada2) and/or fixed-threshold clustering (for low-coverage variants), align and infer the consensus
+3)  Auto-assign the taxonomy and compare with the name given by morphological identification (if present) to validate and check for contamination.
+4)  Compare with already known sequences (if present)
+5)  Export summary table, which can be further manually curated
 
 See [documentation](https://markschl.github.io/dada-ont-barcoding) for more details.
 
@@ -68,7 +67,7 @@ error_threshold <- opts$demultiplex$error_threshold %||% 2.5
 
 The following settings are used (contents of *`r file.path(analysis_dir, 'config.yaml')`*):
 
-```yaml
+``` yaml
 `r xfun::file_string(file.path(analysis_dir, 'config.yaml'))`
 ```
 
@@ -129,6 +128,12 @@ meta_file = file.path(analysis_dir, 'meta.xlsx')
 
 Base-called sequences need to be present in `analysis/<run>/reads.fastq.gz`.
 
+```{r}
+reads_fq <- file.path(file.path(analysis_dir, 'reads.fastq.gz'))
+stopifnot(file.exists(reads_fq))
+```
+
+
 ## Samples
 
 ```{r read-sample-tab}
@@ -138,8 +143,8 @@ amplicon_stats = sample_tab %>%
   group_by(amplicon) %>% 
   summarise(
     `# samples` = n(),
-    `# with morphological identification` = sum(!is.na(morphospecies)),
-    `# with known sequence` = sum(!is.na(`known sequence`)),
+    `# with morphological identification` = sum(!is.na(morpho_taxon)),
+    `# with known sequence` = sum(!is.na(known_sequence)),
     .groups = 'drop'
   )
 ```
@@ -151,7 +156,6 @@ amplicon_stats
 ```
 
 > *Note*: primers are searched in the order that amplicons appear in the sample sheet. With *nested amplicons*, the shorter one should be placed at the end.
-
 
 ## Primers
 
@@ -189,7 +193,6 @@ idxdist.summary = idxdist %>%
 idxdist.summary
 ```
 
-
 ```{r}
 overall_min_idx_dist = min(idxdist.summary$`min. index dist.`)
 stopifnot((opts$demultiplex$idx_max_diffs %||% 0) < overall_min_idx_dist)
@@ -197,18 +200,14 @@ stopifnot((opts$demultiplex$idx_max_diffs %||% 0) < overall_min_idx_dist)
 
 The forward and reverse sample indexes have a length of `r paste(unique(idxdist.summary[['index length']]), collapse=' / ')` bp and a minimum edit distance of `r min(idxdist.summary[['min. index dist.']])` (see also Figure \@ref(fig:idxdist)). The maximum allowed number of sequencing errors in barcodes is `r (opts$demultiplex$idx_max_diffs %||% 0)`. This value should always be *smaller than the minimum distance* between any sample index).
 
-> *Note*: Using a lower `idx_max_diffs` threshold reduces false assignments of 
-> reads to samples, but also leads to less sequences being included in the analysis.
-> On the other hand, an increased error tolerance increases the read count.
-> You can check the unused barcode combinations (*unspecific* in below figures)
-> for any "background noise".
+> *Note*: Using a lower `idx_max_diffs` threshold reduces false assignments of reads to samples, but also leads to less sequences being included in the analysis. On the other hand, an increased error tolerance increases the read count. You can check the unused barcode combinations (*unspecific* in below figures) for any "background noise".
 
 (ref:idxdist) Distribution of pairwise edit distances between sample indexes
 
 ```{r idxdist, fig.width=4, fig.height=1+1.5*length(amplicons), fig.cap='(ref:idxdist)'}
 ggplot(idxdist, aes(dist)) +
   geom_histogram(binwidth=1, fill = '#a6bddb', color='#2b8cbe') +
-  facet_grid(amplicon ~ direction, scales='free') + 
+  facet_wrap( ~ paste(amplicon, direction), ncol=2, scales='free') + 
   scale_x_continuous(breaks=0:10) +
   scale_y_continuous(expand=expansion(mult=c(0, .05))) +
   labs(x='Edit distance between sample indexes',
@@ -220,14 +219,13 @@ ggplot(idxdist, aes(dist)) +
 
 Steps:
 
-- Search for the primers (up to `r 100 * (opts$demultiplex$primer_max_err %||% 0.2)` % error rate)
-- Search for the sample indexes next to the primers (max. `r (opts$demultiplex$idx_max_diffs %||% 0)` differences)
-- Trim primers, filter by quality (max. `r error_threshold` expected errors) and distribute into different files by barcode (de-multiplex)
+-   Search for the primers (up to `r 100 * (opts$demultiplex$primer_max_err %||% 0.2)` % error rate)
+-   Search for the sample indexes next to the primers (max. `r (opts$demultiplex$idx_max_diffs %||% 0)` differences)
+-   Trim primers, filter by quality (max. `r error_threshold` expected errors) and distribute into different files by barcode (de-multiplex)
 
 ## Primer trimming
 
-```{r demultiplex}
-reads_fq <- file.path(file.path(analysis_dir, 'reads.fastq.gz'))
+```{r search-primers}
 demux_dir <- file.path(analysis_dir, 'tmp', 'demux')
 
 args <- c(list(
@@ -249,6 +247,10 @@ amplen_mean = primer_stats$amplicon_len %>%
   filter(category == 'regular') %>% 
   summarise(mean_len = weighted.mean(length, count))
 mean_len = mean(na.omit(amplen_mean$mean_len))
+
+count_stats <- primer_stats$primers %>% 
+  group_by(amplicon, category) %>% 
+  summarise(count = sum(count), .groups='drop')
 
 qual_stats = primer_stats$quality %>% 
   mutate(
@@ -277,10 +279,15 @@ full_join(
   'amplicon'
 ) %>% 
   mutate(amplicon = factor(amplicon, names(amplicon_primers))) %>% 
-  arrange(amplicon)
+  arrange(amplicon) %>% 
+  left_join(count_stats %>%
+              filter(category == 'valid amplicon') %>% 
+              mutate(count = scales::label_number(accuracy=0.01, scale_cut = scales::cut_si(""))(count)) %>% 
+              select(amplicon, `# trimmed reads` = count),
+            'amplicon')
 ```
 
-A small part of the reads has tail lengths around the mean fragment length (or multiples of it), which indicates the presence of concatenated artifacts (Figures \@ref(fig:tail-stats), \@ref(fig:len-stats)). 
+A small part of the reads has tail lengths around the mean fragment length (or multiples of it), which indicates the presence of concatenated artifacts (Figures \@ref(fig:tail-stats), \@ref(fig:len-stats)).
 
 (ref:tail-stats) Distribution of the primer trimmed tail lengths (*note the non-linear scale*)
 
@@ -315,44 +322,9 @@ ggplot(d, aes(length, fill=category, color=category)) +
 
 ## Quality filtering
 
-The quality filtering should remove highly errorneous sequencing reads, while still retaining enough reads for inferring the barcode sequences. The default threshold of *2.5 expected errors per read* can be tweaked (`error_threshold` setting, use Figure \@ref(fig:readstats) for guidance).
+The quality filtering should remove highly errorneous sequencing reads, while still retaining enough reads for inferring the barcode sequences.
 
-(ref:readstats) Read counts by category
-
-```{r readstats, fig.width=6.7, fig.height=2.2, fig.cap='(ref:readstats)'}
-d <- primer_stats$primers %>% 
-  group_by(category, valid) %>% 
-  summarise(count = sum(count), .groups='drop')
-
-ee = qual_stats %>% 
-  filter(!is.na(bc_mis) & !is.na(primer_mis)) %>% 
-  group_by(category = paste(cut(exp_err, c(-1:5, Inf)), 'errors')) %>% 
-  summarise(
-    count = sum(count)
-  )
-stopifnot(d$count[d$valid] == sum(ee$count))
-
-d.ee = bind_rows(
-  d %>% 
-    filter(!valid),
-  ee %>% 
-    mutate(valid = TRUE)
-) %>% 
-  mutate(retain = ifelse(valid, 'valid amplicon', 'no primer(s) /\nfusion artifact'))
-
-ggplot(d.ee, aes(retain, count, fill=category)) +
-  geom_col(position = position_stack(reverse=TRUE)) +
-  labs(x=NULL, y='count') +
-  coord_flip() +
-  scale_y_continuous(labels=scales::label_number(scale_cut = scales::cut_si("")),
-                     expand=expansion(mult=c(0, .05))) +
-  theme(legend.position='bottom') +
-  scale_fill_hue(direction=-1, h.start=270) +
-  labs(fill=NULL) +
-  guides(fill = guide_legend(ncol=4))
-```
-
-According to Figure \@ref(fig:mismatch-stats), reads with many primer or sample index mismatches also tend to have lower quality scores. With the current setting (`error_threshold`), reads with >`r error_threshold` errors and reads shorter than `r (opts$demultiplex$min_read_length %||% 50)` bp (`min_read_length` setting) are discarded.
+According to Figure \@ref(fig:mismatch-stats), reads with many primer or sample index mismatches also tend to have lower quality scores. The default threshold of *2.5 expected errors per read* can be tweaked. With the current settings, reads with \>`r error_threshold` errors and reads shorter than `r (opts$demultiplex$min_read_length %||% 50)` bp (`min_read_length` setting) are discarded. Figure \@ref(fig:readstats) may also help guiding the selection of the threshold.
 
 (ref:mismatch-stats) Mismatch statistics/quality statistics, based on the quality scores from the base-called FASTQ file. (a) Comparison of index/primer mismatches, colored by average read quality; (b/c) Distribution of expected errors per read, colored by primer/index mismatches.
 
@@ -403,7 +375,48 @@ p3 = qual_stats %>%
   plot_annotation(tag_levels='a')
 ```
 
-```{r search-primers}
+(ref:readstats) Read counts by category
+
+```{r readstats, fig.width=6.7, fig.height=1.8+0.2*length(amplicons), fig.cap='(ref:readstats)'}
+d <- primer_stats$primers %>% 
+  group_by(category, valid) %>% 
+  summarise(count = sum(count), .groups='drop')
+
+ee <- qual_stats %>% 
+  filter(!is.na(bc_mis) & !is.na(primer_mis)) %>% 
+  group_by(amplicon, category = paste(cut(exp_err, c(-1:5, Inf)), 'errors')) %>% 
+  summarise(
+    count = sum(count),
+    .groups = 'drop'
+  )
+
+# TODO: check number mismatch
+# stopifnot(sum(d$count[d$valid]) == sum(ee$count))
+
+invalid_lab <- 'no primer(s)/fusion artifact'
+d.ee <- bind_rows(
+  d %>% 
+    filter(!valid) %>% 
+    mutate(group = invalid_lab),
+  ee %>% 
+    mutate(valid = TRUE) %>% 
+    rename(group = amplicon)
+) %>% 
+  mutate(group = factor(group, c(invalid_lab, amplicons)))
+
+ggplot(d.ee, aes(group, count, fill=category)) +
+  geom_col(position = position_stack(reverse=TRUE)) +
+  labs(x=NULL, y='count') +
+  coord_flip() +
+  scale_y_continuous(labels=scales::label_number(scale_cut = scales::cut_si("")),
+                     expand=expansion(mult=c(0, .05))) +
+  theme(legend.position='bottom') +
+  scale_fill_hue(direction=-1, h.start=270) +
+  labs(fill=NULL) +
+  guides(fill = guide_legend(ncol=4))
+```
+
+```{r filter-demultiplex}
 # Do error filtering and distribute by barcode
 demux_out <- file.path(demux_dir, 'by_sample')
 primer_search_fq <- file.path(demux_dir, amplicons, 'demux.fastq.zst')
@@ -416,10 +429,9 @@ args <- list(
 seq_tab <- do.call(run_demux, c(args, opts$demultiplex))
 ```
 
-
 # Infer barcode sequences
 
-Before the DADA2 denoising, it is necessary to determine how the quality scores in the sequencing reads correlate with the substitution error rates. Usually, the relationship looks fairly log-linear, although there can be a plateau/increase at Q > 40 (Figure \@ref(fig:errplot)).
+Before the DADA2 denoising, it is necessary to determine how the quality scores in the sequencing reads correlate with the substitution error rates. Usually, the relationship looks fairly log-linear, although there can be a plateau/increase at Q \> 40 (Figure \@ref(fig:dada2-errplot)).
 
 ```{r dada2-learn-errors}
 dada_err <- run_learn_errors(
@@ -433,7 +445,7 @@ dada_err <- run_learn_errors(
 
 (ref:errplot) Q-scores vs. error frequencies learned by DADA2
 
-```{r errplot, fig.width=4.5, fig.height=3.8, fig.cap='(ref:errplot)', warning=F}
+```{r dada2-errplot, fig.width=4.5, fig.height=3.8, fig.cap='(ref:errplot)', warning=FALSE}
 # # make sure that enough reads are classified
 dada2::plotErrors(dada_err) +
   default_theme()
@@ -441,17 +453,19 @@ dada2::plotErrors(dada_err) +
 
 From each of the de-multiplexed and filtered read files, a maximum of `r max_sample_depth` reads (`max_sample_depth` setting) are analyzed (Figure \@ref(fig:cluster-validation)a).
 
-The DADA2 denoising method relies on presence of **at least a few error-free reads** in the filtered Nanopore data. This should usually be the case with recent (R10.4) sequencing data, and assuming that amplicons are not extremely long. Specifically, the proportion of singletons^[Singletons are sequences only present *once* in a sample (non-duplicated)] has to be lower than 100 % (Figure \@ref(fig:cluster-validation)b), as duplicated sequences are likely to represent true sequences in the sample, while singletons often contain sequencing errors.
+The DADA2 denoising method relies on presence of **at least a few error-free reads** in the filtered Nanopore data. This should usually be the case with recent (R10.4) sequencing data, and assuming that amplicons are not extremely long. Specifically, the proportion of singletons[^1] has to be lower than 100 % (Figure \@ref(fig:cluster-validation)b), as duplicated sequences are likely to represent true sequences in the sample, while singletons often contain sequencing errors.
 
-The barcode clustering procedure automatically checks the read duplication, and switches from DADA2 denoising to fixed-threshold clustering if there are < `r opts$cluster$dada_min_identical %||% 2` identical sequences or < `r opts$cluster$dada_min_n0 %||% 4` sequences without substitution errors (Figure \@ref(fig:cluster-validation)b and c; *cluster_fixed* method). The thresholds can be changed in `config.yaml` (`dada_min_identical` and `dada_min_n0`). In some cases, DADA2-denoised ASVs can be further split into two more or less equally abundant haplotypes (*dada_split* method in Figure \@ref(fig:cluster-validation)).
+[^1]: Singletons are sequences only present *once* in a sample (non-duplicated)
 
-```{r cluster, include=F}
-aln_dir = file.path(analysis_dir, 'output', 'alignments')
+The barcode clustering procedure automatically checks the read duplication, and switches from DADA2 denoising to fixed-threshold clustering if there are \< `r opts$cluster$dada_min_identical %||% 2` identical sequences or \< `r opts$cluster$dada_min_n0 %||% 4` sequences without substitution errors (Figure \@ref(fig:cluster-validation)b and c; *cluster_fixed* method). The thresholds can be changed in `config.yaml` (`dada_min_identical` and `dada_min_n0`). In some cases, DADA2-denoised ASVs can be further split into two more or less equally abundant haplotypes (*dada_split* method in Figure \@ref(fig:cluster-validation)).
+
+```{r cluster, include=FALSE}
+aln_out = file.path(analysis_dir, 'output', 'alignments')
 seq_tab <- run_clustering(
   seq_tab,
   dada_err,
   cache_file = file.path(analysis_dir, 'tmp/cluster.rds'),
-  aln_dir = aln_dir,
+  aln_out = aln_out,
   cores = cores,
   opts = opts$cluster,
   overwrite = FALSE
@@ -541,7 +555,7 @@ Ambiguous bases in the reported sequence mostly appear in low-depth samples, whe
 
 In rare cases, the alignment consensus does not match the inferred DADA2 ASV sequence (Figure \@ref(fig:cluster-validation2)c/d). These barcodes will have a *consensus-diffs* issue flag in the report, and the consensus sequence is reported (may be inspected manually, but usually the consensus should make sense).
 
-(ref:cluster-validation2) (a/b) Distribution of the ambiguous base count in the top consensus sequence (< `r (opts$cluster$consensus_threshold %||% 0.65) * 100` % in alignment having the same base). (c/d) Number of mismatches between the DADA2 ASV and the consensus sequence. The vertical line indicates a sequencing depth threshold of `r low_abund_threshold` reads (`low_abund_threshold` in `config.yaml`).
+(ref:cluster-validation2) (a/b) Distribution of the ambiguous base count in the top consensus sequence (\< `r (opts$cluster$consensus_threshold %||% 0.65) * 100` % in alignment having the same base). (c/d) Number of mismatches between the DADA2 ASV and the consensus sequence. The vertical line indicates a sequencing depth threshold of `r low_abund_threshold` reads (`low_abund_threshold` in `config.yaml`).
 
 ```{r cluster-validation2, fig.width=6.7, fig.height=4.5, message=FALSE, warning=FALSE, fig.cap='(ref:cluster-validation2)'}
 group_limit = function(x, lim) factor(
@@ -588,14 +602,13 @@ mdepth = ggplot(d_dada, aes(n_seqs, cons_diffs_,
   plot_annotation(tag_levels='a')
 ```
 
-
 # Haplotypes / polymorphism
 
-The clustering procedure usually yields 1-2 abundant haplotype sequences from the target organism, and few rare/unspecific barcode sequences (Figure \@ref(fig:polymorphisms)a/b). In addition, there may be additional copies of the target barcode in the genomes. A fixed-threshold clustering at a similarity threshold of `r (opts$cluster$cluster_threshold %||% 0.97) * 100` % is done to distinguish the target organism from other organisms, which may also be present in the mix (e.g. contamination). If DNA was extracted from the tissue of multiple individuals, there might also be more than the two parental haplotypes. Polymorphisms with < `r (opts$post_cluster$min_haplo_freq %||% 0.1) * 100` % frequency in an organism group are removed.
+The clustering procedure usually yields 1-2 abundant haplotype sequences from the target organism, and few rare/unspecific barcode sequences (Figure \@ref(fig:polymorphisms)a/b). In addition, there may be additional copies of the target barcode in the genomes. A fixed-threshold clustering at a similarity threshold of `r (opts$cluster$cluster_threshold %||% 0.97) * 100` % is done to distinguish the target organism from other organisms, which may also be present in the mix (e.g. contamination). If DNA was extracted from the tissue of multiple individuals, there might also be more than the two parental haplotypes. Polymorphisms with \< `r (opts$post_cluster$min_variant_freq %||% 0.1) * 100` % frequency in an organism group are removed.
 
-The proportion of reads belonging to the final (probably specific) clusters is usually 50-100% at read depths > 1000, but decreases with lower depths (Figure \@ref(fig:polymorphisms)c). Reasons can be sequencing errors (also in the sample indexes), as well as contamination.
+The proportion of reads belonging to the final (probably specific) clusters is usually 50-100% at read depths \> 1000, but decreases with lower depths (Figure \@ref(fig:polymorphisms)c). Reasons can be sequencing errors (also in the sample indexes), as well as contamination.
 
-(ref:polymorphisms) (a/b) Distribution of putative haplotype numbers for the top organism in a sample; (c) Proportion of reads from the *top* organism group relative to the total analyzed read depth
+(ref:polymorphisms) (a/b) Distribution of putative polymporphic sequence numbers for the top organism in a sample; (c) Proportion of reads from the *top* organism group relative to the total analyzed read depth
 
 ```{r polymorphisms, fig.width=6.7, fig.height=4.5, message=FALSE, warning=FALSE, fig.cap='(ref:polymorphisms)'}
 # TODO: investigate/filter contaminants present in (almost) every sample
@@ -629,7 +642,6 @@ hhist + hdepth +
   plot_annotation(tag_levels='a')
 ```
 
-
 # Taxonomic assignments
 
 Taxonomic names are assigned with the the SINTAX algorithm using a bootstrap confidence threshold of `r (opts$taxonomy$confidence_threshold %||% 0.8) * 100` %.
@@ -637,22 +649,32 @@ Taxonomic names are assigned with the the SINTAX algorithm using a bootstrap con
 > **Caution**: these automatic sequence-based assignments are not guaranteed to be correct, it is recommended to further validate them, e.g. using BLAST.
 
 ```{r load-taxdb}
-taxdb_file <- do.call(load_taxdb, c(list(db_dir='taxdb'), opts$taxonomy))
+stopifnot(!is.null(opts$taxonomy))
+tax_opts <- get_amplicon_opts(opts$taxonomy, amplicons)
+taxdb_files <- sapply(tax_opts, function(o) {
+  do.call(load_taxdb, c(list(db_dir='taxdb'), o))
+})
 ```
 
 Any blacklisted taxa (`known_contaminants` in `config.yaml`) are directly flagged as contaminants, and other barcodes in the same sample are preferred.
 
-Second, morphological identifications (`morphospecies` column in metadata) are compared to the automatic taxonomic assignments. From this, a **taxonomic overlap** is calculated, which is the *proportion of matching ranks in the taxonomic lineages* (as far as names are defined at these levels). The lineages are retrieved from the [GBIF backbone](https://doi.org/10.15468/39omei) taxonomy.
+Second, morphological identifications (morpho_taxon column in metadata) are compared to the automatic taxonomic assignments. From this, a **taxonomic overlap** is calculated, which is the *proportion of matching ranks in the taxonomic lineages* (as far as names are defined at these levels). The lineages are retrieved from the [GBIF backbone](https://doi.org/10.15468/39omei) taxonomy.
 
-```{r assign-taxonomy}
+```{r assign-taxonomy, include=FALSE}
 # note: repeated runs may lead to slightly different results
 # due to the randomness of the SINTAX algorithm
-prefix <- file.path(analysis_dir, 'tmp/taxonomy')
-args <- c(list(seq_tab, prefix, taxdb_file), opts$taxonomy)
-seq_tab = do.call(run_taxonomy_assignment, args)
+seq_tab$taxon <- seq_tab$undefined <- seq_tab$has_contamination <- NA
+for (amplicon in amplicons) {
+  cat(amplicon, '\n')
+  prefix <- file.path(analysis_dir, paste0('tmp/taxonomy_', amplicon))
+  sel <- seq_tab$amplicon == amplicon
+  args <- c(list(seq_tab[sel,], prefix, taxdb_files[amplicon]), tax_opts[[amplicon]])
+  seq_tab[sel,] <- do.call(run_taxonomy_assignment, args)
+}
+seq_tab <- propagate_tax_data(seq_tab)
 ```
 
-A barcode sequence (more precisely, a `r (opts$cluster$cluster_threshold %||% 0.97) * 100` % group) is *automatically* classified as contaminant if there exists another sequence (group), which has a better taxonomic overlap with the morphological identification. The overlap is assumed to be better if there exists a less abundant taxon, which has at least *three more consistent (matching) taxonomic ranks* in the GBIF lineage compared to the top taxon (undefined ranks excluded from the comparison). Figure \@ref(fig:tax-overlap) visualizes the final taxonomic assignments. The taxonomic overlap (Figure \@ref(fig:tax-overlap)b) should mostly be near 100% (bars on right side).
+A barcode sequence (more precisely, a `r (opts$cluster$cluster_threshold %||% 0.97) * 100` % group) is *automatically* classified as contaminant if there exists another sequence (group), which has a better taxonomic overlap with the morphological identification. The overlap is assumed to be better if there exists a less abundant taxon, with the correct kingdom, or one that has has at least *three more consistent (matching) taxonomic ranks* in the GBIF lineage compared to the top taxon (undefined ranks excluded from the comparison). Figure \@ref(fig:tax-overlap) visualizes the final taxonomic assignments. The taxonomic overlap (Figure \@ref(fig:tax-overlap)b) should mostly be near 100% (bars on right side).
 
 > **note**: the ranking may sometimes be incorrect, or if contaminants are too related to the target taxon, they may not automatically be flagged; a **manual investigation of the report** is highly recommended.
 
@@ -665,50 +687,63 @@ if (any(seq_tab$has_contamination)) {
   cont$contaminants = sapply(cont$clustering, function(d) paste(unique(d$taxon[d$is_contaminant]), collapse=', '))
   rownames(cont) <- NULL
   cont %>% 
-    select(sample, morphospecies, `correct taxon`=top_seq_taxon, contaminants) %>% 
+    select(sample, morpho_taxon, `correct taxon`=top_seq_taxon, contaminants) %>% 
     mutate(sample = stringr::str_trunc(sample, 30))
 }
 ```
 
-(ref:tax-overlap) Overview of taxonomic assignments, summarized per plate. (a) Taxonomic composition (based on barcode sequences); (b) Taxonomic overlap between the morphological and sequence-based taxonomic assignments
+(ref:tax-composition) Taxonomic composition (based on barcode sequences) by plate and amplicon
 
-```{r tax-overlap, warning=FALSE, fig.width=6.7, fig.height=3 + 0.9 * sqrt(length(unique(seq_tab$plate))), fig.cap='(ref:tax-overlap)'}
-abundant.lineages = names(head(sort(table(seq_tab$top_seq_short_lineage), TRUE), 10))
-d <- seq_tab %>% 
-  select(amplicon, plate, lineage = top_seq_short_lineage,
-         nmatch = top_seq_matching_ranks,
-         nmismatch = top_seq_mismatching_ranks,
-         n_seqs) %>% 
-  filter(!is.na(plate)) %>% 
+```{r tax-composition, warning=FALSE, fig.width=6.7, fig.height=4, fig.cap='(ref:tax-composition)'}
+abundant.lineages = names(head(sort(
+  table(seq_tab$top_seq_short_lineage), TRUE
+), 10))
+d <- seq_tab %>%
+  select(
+    amplicon,
+    plate,
+    lineage = top_seq_short_lineage,
+    nmatch = top_seq_matching_ranks,
+    nmismatch = top_seq_mismatching_ranks,
+    n_seqs
+  ) %>%
+  filter(!is.na(plate)) %>%
   mutate(
     nrank = nmatch + nmismatch,
     tax_overlap = nmatch / nrank,
     lineage = factor(
       case_when(
-        lineage %in% abundant.lineages ~ lineage,
+        lineage %in% abundant.lineages ~ stringr::str_trunc(lineage, 50),
         n_seqs > 0 ~ 'Other',
         n_seqs == 0 ~ '(no sequence)'
       ),
-      c(abundant.lineages, 'Other', '(no sequence)')
+      c(unique(
+        stringr::str_trunc(abundant.lineages, 50)
+      ), 'Other', '(no sequence)')
     )
   )
-p1 = ggplot(d, aes(as.factor(plate), fill=lineage)) +
+
+ggplot(d, aes(as.factor(plate), fill=lineage)) +
   geom_bar() +
-  facet_grid(amplicon ~ ., scales='free') +
+  facet_grid(~ amplicon, scales='free', space='free') +
   scale_y_continuous(expand = expansion(mult=0)) +
-  scale_fill_brewer(palette='Paired') +
+  scale_fill_brewer(palette='Paired', guide=guide_legend(ncol=2)) +
   labs(x='Plate', fill=NULL) +
-  theme(legend.position='right',
-        legend.key.height=unit(0.8, 'lines'))
+  theme(legend.position='bottom',
+        legend.key.height=unit(0.8, 'lines'),
+        axis.text.x=element_text(angle=45, hjust=1, vjust=1, size=7))
+```
 
+(ref:tax-overlap) Taxonomic overlap between the morphological and sequence-based taxonomic assignments (bars on right side near 100% overlap)
 
+```{r tax-overlap, warning=FALSE, fig.width=6.7, fig.height=1 + 0.5 * sqrt(length(unique(seq_tab$plate))), fig.cap='(ref:tax-overlap)'}
 d.ov <- d %>% 
   filter(!is.na(nrank) & nrank >= 3) %>% 
   group_by(amplicon, plate) %>% 
   mutate(category = if (mean(tax_overlap) > 0.5) 'looks ok' else 'low overlap')
-p2 <- ggplot(d.ov, aes(tax_overlap, fill=category)) +
+ggplot(d.ov, aes(tax_overlap, fill=category)) +
   geom_histogram(binwidth=1/7) +
-  facet_wrap(~ sprintf('%s / p%d', amplicon, plate), scales='free_y') +
+  facet_wrap(~ sprintf('%s / p%s', amplicon, plate), scales='free_y') +
   scale_y_continuous(expand = expansion(mult=c(0, 0.05))) +
   scale_fill_manual(values = c('looks ok'='#a6bddb', 'low overlap'='orange')) +
   coord_cartesian(xlim = c(0, 1)) +
@@ -716,34 +751,33 @@ p2 <- ggplot(d.ov, aes(tax_overlap, fill=category)) +
   theme(legend.position='none',
         panel.spacing.x = unit(0, 'mm'),
         panel.border = element_rect(colour='black', size=0.5, fill=NA))
-
-(wrap_elements(p1) / p2) +
-  plot_layout(heights = c(3, 1.5 * sqrt(length(unique(seq_tab$plate))))) +
-  plot_annotation(tag_levels='a')
 ```
 
 For samples with putative contaminants, the clustering is re-run without sample depth limit in order to ensure the effective detection of even rare target barcodes.
 
 ```{r re-cluster-contaminants}
-# cluster
+# cluster and assign taxonomy
 sel <- seq_tab$has_contamination & seq_tab$n_seqs >= max_sample_depth
 if (any(sel)) {
-  t <- run_clustering(
-    seq_tab[sel, , drop=FALSE],
-    dada_err,
-    cache_file = file.path(analysis_dir, 'tmp/cluster_contam'),
-    aln_dir = aln_dir,
-    cores = cores,
-    opts = modifyList(opts$cluster %||% list(), list(max_sample_depth = 1e7)),
-    overwrite = FALSE
-  )
-  tax_prefix <- file.path(analysis_dir, 'tmp/taxonomy_cont')
-  args <- c(list(seq_tab[sel, ], tax_prefix, taxdb_file), opts$taxonomy)
-  seq_tab[sel,] <- do.call(run_taxonomy_assignment, args)
+  for (amplicon in unique(seq_tab$amplicon[sel])) {
+    t <- run_clustering(
+      seq_tab[sel, , drop=FALSE],
+      dada_err,
+      cache_file = file.path(analysis_dir, 'tmp/cluster_contam.rds'),
+      aln_out = aln_out,
+      cores = cores,
+      opts = modifyList(opts$cluster %||% list(), list(max_sample_depth = 1e7)),
+      overwrite = FALSE
+    )
+    tax_prefix <- file.path(analysis_dir, paste0('tmp/taxonomy_cont_', amplicon))
+    summary_ranks <- readRDS(file.path(analysis_dir, paste0('tmp/taxonomy_', amplicon, '_summary_ranks.rds')))
+    args <- c(list(seq_tab[sel, ], tax_prefix, taxdb_files[[amplicon]], summary_ranks=summary_ranks),
+              opts$taxonomy)
+    seq_tab[sel,] <- do.call(run_taxonomy_assignment, args)
+  }
+  seq_tab <- propagate_tax_data(seq_tab)
 }
 ```
-
-
 
 # Comparison to known sequences
 
@@ -751,7 +785,7 @@ In case of re-sequencing a specimen, there is the additional possibility of vali
 
 ```{r compare-known-seqs}
 # TODO: cache?
-seq_tab <- compare_known_seqs(seq_tab)
+seq_tab <- compare_known_seqs(seq_tab, aln_out)
 ```
 
 (ref:known-seq-diffs) Mismatches to already known sequences (in case of re-sequencing). The vertical red line indicates a critical sequencing depth threshold of `r low_abund_threshold` reads.
@@ -778,7 +812,6 @@ if (nrow(d) > 0) {
     plot_annotation(tag_levels='a')
 }
 ```
-
 
 # Report
 

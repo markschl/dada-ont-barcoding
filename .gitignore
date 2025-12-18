@@ -13,3 +13,5 @@ taxdb/
 site/
 .R*
 .venv/
+.Rproj.user
+.temp*

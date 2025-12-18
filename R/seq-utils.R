@@ -18,11 +18,16 @@ limit_sample <- function(x, limit) {
 
 #' Get edit distance for best-matching strand
 match_both_orient <- function(seq1, seq2, cores = 1) {
-  both_orient <- list(seq1, as.character(Biostrings::reverseComplement(Biostrings::DNAStringSet(seq1))))
+  both_orient <- list(seq1, rev_complement(seq1))
   diffs <- simplify2array(lapply(both_orient, function(s1) {
     pairwise_align(s1, seq2, count_end_gaps=FALSE, cores = cores)[,'diffs']
   }), except=NA)
-  apply(diffs, 1, min)
+  orient <- apply(diffs, 1, which.min)
+  setNames(apply(diffs, 1, min), orient)
+}
+
+rev_complement <- function(seq) {
+  as.character(Biostrings::reverseComplement(Biostrings::DNAStringSet(seq)))  
 }
 
 write_dna <- function(seqs, seq_file) {

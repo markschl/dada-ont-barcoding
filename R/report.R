@@ -3,11 +3,12 @@
 create_report <- function(seq_tab,
                           outfile,
                           low_abund_threshold = 20,
+                          min_seqs = 3,
                           n_curate = 4,
                           max_seqs = 6,
                           ...) {
   
-  seq_tab_def <- seq_tab[!is.na(seq_tab$sample),]
+  seq_tab_def <- seq_tab[!is.na(seq_tab$sample) | !is.na(seq_tab$n_seqs) & seq_tab$n_seqs >= min_seqs,]
 
   # TODO: should issues only be reported for most abundant seq or for all?
   #   (right now: for all)
@@ -77,7 +78,7 @@ create_report <- function(seq_tab,
   # filtered data
   
   # TODO: where does amplicon order get lost in sample_tab -> seq_tab?
-  seq_tab_def <- seq_tab_def[order(seq_tab_def$amplicon, seq_tab_def$plate, seq_tab_def$well),]
+  # seq_tab_def <- seq_tab_def[with(seq_tab_def, order(amplicon, plate, well, indexes)),]
   seq_tab_def$top_seq_taxon <- gsub('_', ' ', seq_tab_def$top_seq_taxon)
   seq_tab_def$`matching ranks` <- with(seq_tab_def,
                                       ifelse(is.na(top_seq_matching_ranks), NA,
@@ -95,11 +96,11 @@ create_report <- function(seq_tab,
 
   fixed_cols <- c(
     'amplicon', 'plate', 'well',
-    'indexes', 'data link'='link', 'sample', 'sample type',
+    'indexes', 'data link'='link', 'sample', 'sample_type',
     'issues', '# seqs'='top_n_seqs', '# ambig'='top_seq_consensus_ambigs',
     '# seqs'='n_seqs', '% assigned'='target_cluster_frac',
-    'morphospecies', 'auto-assigned'='top_seq_taxon', 'matching ranks',
-    'seq'='known sequence', 'diffs'='known_seq_diffs',
+    'morpho_taxon', 'auto-lineage'='top_seq_short_lineage', 'auto-taxon'='top_seq_taxon', 'matching ranks',
+    'seq'='known_sequence', 'diffs'='known_seq_diffs',
     'comment'='final_comment'
   )
   
@@ -109,7 +110,7 @@ create_report <- function(seq_tab,
     12, 5,
     5, 12, 8, 12, 10,
     25, 8, 8, 9, 8,
-    22, 22, 8,
+    22, 22, 22, 8,
     5, 5,
     18
   )
@@ -135,17 +136,21 @@ create_report <- function(seq_tab,
   colnames(flags.m) = paste0('flags_seq', 1:n_clust)
   
   # (curated) sequences
-  # with associated taxonomy
-  d <- unique(do.call(rbind,
-    lapply(seq_tab_def$clustering, function(d) cbind(d$consensus, d$taxon))
+  # with associated taxonomy: it is possible that multiple tax. assignments
+  # of the same sequence lead to different taxa/lineages
+  # (SINTAX randomness, different amplicons with same primer positions)
+  # -> always take the first taxon
+  unique_seq_d <- unique(do.call(rbind,
+    lapply(seq_tab_def$clustering, '[', c('consensus', 'short_lineage', 'taxon'))
   ))
-  rownames(d) <- paste0('u', seq_len(nrow(d)))
-  unique_seqs <- setNames(names(d[,1]), d[,1])
-  unique_seq_taxa <- d[,2]
-  stopifnot(!duplicated(unique_seqs))
+  unique_seq_d <- aggregate(cbind(short_lineage, taxon) ~ consensus, data = unique_seq_d, FUN = '[[', 1)
+  rownames(unique_seq_d) <- paste0('u', seq_len(nrow(unique_seq_d)))
+  unique_seq_map <- setNames(rownames(unique_seq_d), unique_seq_d[,1])
+  stopifnot(!duplicated(unique_seq_d[,'consensus']))
+  
   uniq.m = as.data.frame(t(simplify2array(lapply(seq_tab_def$clustering, function(d) {
     seq <- if (is.null(d$consensus)) NA else d$consensus[!d$unspecific]
-    unique_seqs[seq][1:n_curate]
+    unique_seq_map[seq][1:n_curate]
   }), except=NA)))
   colnames(uniq.m) = paste0('unq', 1:n_curate)
   curseq.m = curfasta.m = matrix(NA, nrow=nrow(seq_tab_def), ncol=n_curate)
@@ -171,8 +176,8 @@ create_report <- function(seq_tab,
   
   headers <- list(
     Overview = list(rng=c('issues', 'target_cluster_frac'), bg='#e5f5e0'),
-    Taxonomy = list(rng=c('morphospecies', 'matching ranks'), bg='#deebf7'),
-    `Known sequences` = list(rng=c('known sequence', 'known_seq_diffs'), bg='#fee0d2'),
+    Taxonomy = list(rng=c('morpho_taxon', 'matching ranks'), bg='#deebf7'),
+    `Known sequences` = list(rng=c('known_sequence', 'known_seq_diffs'), bg='#fee0d2'),
     `Curation` = list(rng = c('final_comment', paste0('FA', n_curate)), bg='#ffedd5'),
     `Uniques` = list(rng = c('unq1', paste0('unq', n_curate)), bg='#efedf5'),
     `[Flags]` = list(rng=length(fixed_cols) + 3*n_curate + c(1, n_clust)),
@@ -201,66 +206,9 @@ create_report <- function(seq_tab,
       'Proportions < 50% may due to contamination or low sequence quality,',
       'or can also appear with low read depths (<500)'
     ),
-    'issues' = 
-      paste('Comma-separated list of issues. Issues [in brackets] are not necessarily ',
-            'critical problems (may be false warnings), but may be inspected nonetheless\r\n') +
-      fmt_txt('ambig-consensus:', bold=T) + paste(
-        'At least one of the top taxon consensus sequences have ambiguities,',
-        'suggesting either unresolved sequence variation, or sequencing errors',
-        'such as long homopolmyers.',
-        'To investigate, click on "→ data" to open a folder with alignment files.\r\n') +
-      fmt_txt('[consensus-diffs]:', bold=T) + paste(
-        'At least one of the top taxon consensus sequences does not match the',
-        'dominant unique sequence. This is usually not a real issue.\r\n') +
-      fmt_txt('tax-mismatch:', bold=T) + paste(
-        'Inconsistency found between the name in the morphospecies column',
-        'and the auto-assigned taxon (see also "matching ranks").',
-        'Strong inconsistencies might also indicate a preparation error or',
-        'contamination, although contamination is usually automatically recognized\r\n') +
-      fmt_txt('contamination:', bold=T) + paste(
-        'The most abundant taxon is suspected to be a contamination',
-        'and was therefore removed.\r\n') +
-      fmt_txt('known-seq-diffs:', bold=T) + paste(
-        'There is at least one mismatch between the top taxon and the provided',
-        '"known" sequence.',
-        'To investigate, click on "→ data" to open a folder containing ...seq_comparison.fasta\r\n') +
-      fmt_txt('known-seq-contamination:', bold=T) + paste(
-        'The provided "known" sequence appears to be a contamination itself\r\n') +
-      fmt_txt('many-variants:', bold=T) + paste(
-        'Strong sequence variability for the top taxon',
-        '(> 4 abundant variants above the frequency threshold).',
-        'Maybe multiple individuals are present in the DNA mix?\r\n') +
-      fmt_txt('low-coverage:', bold=T) + paste(
-        sprintf('< %s Nanopore sequences support the top taxon;', low_abund_threshold),
-        'Low-coverage samples may have more ambiguities, and there is a higher',
-        'risk for errors (possibly investigate the BAM alignments)\r\n'),
-    'top_seq_taxon' = paste(
-      'Auto-assigned name for the top selected taxon'
-    ),
-    'matching ranks' = paste(
-      'This column contains the number of matching/total taxonomic ranks',
-      'from the comparison of the morphological and automatic sequence-based identifications'
-    ),
-    'known_seq_diffs' = paste(
-      'Number of differences (substitutions/InDels) between the provided "known" sequence',
-      'and the top selected sequence'
-    ),
-    'final_comment' = paste(
-      'Comment that indicates why a certain sequence was chosen (or not).',
-      'If there are >2 mismatching ranks in the comparison between morphological',
-      'and sequence-based identification (see "matching ranks"), "unexpected taxon"',
-      'is automatically pre-filled, and all sequences in the curation section are hidden.'
-    ),
-    'seq1' = paste(
-      'Finally chosen sequence(s) (autofilled unless there are problems).',
-      'This can be edited by manually filling another sequence from the "details"',
-      'workbook or from an alignment, etc.'
-    ),
-    'FA1' = paste(
-      'Sequences in FASTA format (can be copied)'
-    )
+    'issues' = 'See https://markschl.github.io/dada-ont-barcoding/curation/#list-of-issues'
   )
-  
+
   row_i <- 2+1:nrow(out)
   row_i_all <- 1:(nrow(out)+2)
   
@@ -322,7 +270,7 @@ create_report <- function(seq_tab,
     '%s&"-"&%s&" "&%s&" / "&%s', 
     ref(match('plate', cols), row_i, lock='col'),
     ref(match('well', cols), row_i, lock='col'),
-    ref(match('morphospecies', cols), row_i, lock='col'),
+    ref(match('morpho_taxon', cols), row_i, lock='col'),
     ref(match('top_seq_taxon', cols), row_i, lock='col')
   )
 
@@ -484,25 +432,26 @@ create_report <- function(seq_tab,
   # Details sheet
   
   dcols <- c(
-    'indexes', 'data link'='link', 'name'='id', 'unique id'='unique_id',
+    'amplicon', 'indexes', 'data link'='link', 'name'='id', 'unique id'='unique_id',
     'taxon group'='group', 'sequence', 'FASTA'='fasta',
     '# reads'='abundance', '# cons. diffs'='consensus_diffs',  '# ambig'='consensus_ambigs',
-    'auto-taxon'='taxon', 'matching ranks',
+    'auto-lineage'='short_lineage', 'auto-taxon'='taxon', 'matching ranks',
     'contaminant'='is_contaminant', 'unspecific'
   )
   names(dcols) = ifelse(names(dcols) == '', dcols, names(dcols))
   
   dcol_widths <- c(
-    12, 8, 12, 10,
+    12, 12, 8, 12, 10,
     10, 15, 15,
     8, 8, 8,
-    22, 8,
+    35, 22, 8,
     10, 10
   )
   
   l <- lapply(1:nrow(seq_tab_def), function(i) {
     d <- seq_tab_def$clustering[[i]]
     if (!is.null(d)) {
+      d$amplicon <- seq_tab_def$amplicon[i]
       d$indexes <- seq_tab_def$indexes[i]
       spec <- !d$unspecific
       d$link <- '→ data'
@@ -512,7 +461,7 @@ create_report <- function(seq_tab,
       } else {
         d$`matching ranks` <- NA
       }
-      d$unique_id <- unique_seqs[d$consensus]
+      d$unique_id <- unique_seq_map[d$consensus]
       d$consensus<- ''
       d <- d[dcols]
       names(d) <- names(dcols)
@@ -542,7 +491,7 @@ create_report <- function(seq_tab,
     dims=wb_dims(drow_i, match('sequence', dcols))
   )
   wb$add_formula(
-    x=sprintf('IFERROR(VLOOKUP(%s, sequences!$A:$C, 3, 0), "")', uref),
+    x=sprintf('IFERROR(VLOOKUP(%s, sequences!$A:$D, 3, 0), "")', uref),
     dims=wb_dims(drow_i, match('taxon', dcols))
   )
 
@@ -574,9 +523,10 @@ create_report <- function(seq_tab,
   
   wb$add_worksheet('sequences')
   d <- data.frame(
-    unique_name = unique_seqs, 
-    sequence = names(unique_seqs),
-    taxon = unique_seq_taxa[unique_seqs]
+    unique_name = unique_seq_map, 
+    sequence = names(unique_seq_map),
+    lineage = unique_seq_d[, 'short_lineage'],
+    taxon = unique_seq_d[, 'taxon']
   )
   wb$add_data(x=d)
   

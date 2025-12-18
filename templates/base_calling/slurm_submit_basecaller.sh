@@ -24,7 +24,7 @@ nvidia-smi >&2
 model="$1"
 indir="$2"
 
-dorado=~/bin/dorado/bin/dorado  # <- adjust to install location
+dorado=~/opt/dorado/bin/dorado  # <- adjust to install location
 
 "$dorado" basecaller $model --verbose --no-trim --emit-fastq "$indir" | 
   /bin/gzip -c > output.fastq.gz
