@@ -5,7 +5,7 @@ hide:
 
 # Sequence curation
 
-The results of the automated analysis are in *ONT_analysis/<run name\>/output/report.xlsx*. There is one row per barcode, the columns are explained by comments in the document.
+The results of the automated analysis are in *analysis/<run name\>/output/report.xlsx*. There is one row per barcode, the columns are explained by comments in the document.
 
 The **issues** list should be investigated more closely, although not all of them are critical. The list can be filtered.
 
@@ -16,13 +16,16 @@ The **issues** list should be investigated more closely, although not all of the
 
 The *seq1*, [*seq2*, etc.] columns in the **Curation** section contain the final sequences. In case of problems, they can be edited. Changed sequences appear in <span style="color:blue">blue</span>
 
-> FASTA sequences can be exported by a simple copy&paste from the *FA1* [*FA2*, etc.] columns to a text file.
+> FASTA sequences can be exported by a simple copy&paste from the *FA1* [*FA2*, etc.] columns to a text file (works well with LibreOffice).
+
+> **Excel:** copy&paste to a *Word document*, then copy&paste to the final text file or search field, etc.
+> *OR*: copy directly to a text file, then remove all double quotes (") with search&replace.
 
 ## Common problems
 
 ### Inconsistent taxonomy
 
-The **tax-mimatch** issue indicates a mismatch between the taxonomic name in the *morphospecies* entry and the sequence-based identification. Possible reasons:
+The **tax-mimatch** issue indicates a mismatch between the taxonomic name in the *morpho-taxon* entry and the sequence-based identification. Possible reasons:
 
 - mis-identified specimen
 - something got mixed up when preparing specimens/extracting/amplifying
@@ -56,23 +59,29 @@ In this case, a long homopolymer stretch results in an unclear sequence.
 -   **ambig-consensus:** At least one of the top taxon consensus
     sequences have ambiguities, suggesting either unresolved sequence
     variation, or sequencing errors e.g. in long homopolmyer regions. To
-    investigate, click on "→ data"
-    to open a folder with alignment files.
+    investigate, click on "→ data" to open a folder with alignment files.
+    (see also [*consensus_threshold* setting](https://github.com/markschl/dada-ont-barcoding/blob/main/templates/analysis/config.commented.yaml))
 
 -   **[consensus-diffs]:** At least one of the top taxon consensus
-    sequences does not match the dominant unique sequence. This is
-    not necessarily an issue (the consensus is always reported),
-    but it can happen with only few and/or noisy sequences.
+    sequences does not match the *dominant unique sequence*. This is
+    not necessarily an issue (as the consensus is always reported)
+    but is an indication for noisy data and/or low-depth samples.
 
 -   **tax-mismatch:** Inconsistency found between the name in the
-    *morphospecies* column and the auto-assigned taxon (see also "matching
-    ranks"). Strong inconsistencies might also indicate a preparation
-    error or contamination, although contamination is usually
-    automatically recognized
+    *morpho-taxon* column and the *auto-assigned taxon* (see also "matching
+    ranks" column). Strong inconsistencies might indicate a preparation
+    error or contamination, although contamination is often automatically recognized.
+    
+    > Note that the automatic taxonomy is not always correct; it depends on the
+    > reference database and the
+    > [confidence threshold](https://github.com/markschl/dada-ont-barcoding/blob/main/templates/analysis/config.commented.yaml)
 
 -   **contamination:** The most abundant taxon is suspected to be a
-    contamination and was therefore ignored (still listed in the
-    "details" sheet).
+    contamination and was therefore ignored.
+    It is still listed in the "details" sheet, and manual inspection of at least
+    part of the putative contaminants is recommended to ensure that there are
+    no errors in the automatic ranking
+    (see also [*contam_rank_delta* setting](https://github.com/markschl/dada-ont-barcoding/blob/main/templates/analysis/config.commented.yaml))
 
 -   **known-seq-diffs:** There is at least one mismatch between the top
     taxon and the provided "known" sequence. To investigate, click on "→
@@ -81,15 +90,15 @@ In this case, a long homopolymer stretch results in an unclear sequence.
 -   **known-seq-contamination:** The provided "known" sequence appears
     to be a contamination itself
 
--   **many-variants:** Strong sequence variability for the top taxon (\>
-    4 abundant variants above the frequency threshold). Maybe multiple
-    individuals are
-    present in the DNA mix?
+-   **many-variants:** Strong sequence variability for the top taxon
+    (>4 abundant variants above the frequency threshold).
+    Maybe multiple individuals are present in the DNA mix?
 
 -   **low-coverage:**
-    \<20 Nanopore sequences support the top taxon; Low-coverage samples
-    may have more ambiguities, and there is a higher risk for errors
+    Only few Nanopore sequences support the top taxon.
+    Low-coverage samples may have more ambiguities, and there is a higher risk for errors
     (possibly investigate the BAM alignments)
+    (see also [*low_abund_threshold* setting](https://github.com/markschl/dada-ont-barcoding/blob/main/templates/analysis/config.commented.yaml))
 
 -  **< 3 times overabundant**:
      The top taxon is less than 3x more abundant than the second taxon.
@@ -102,8 +111,6 @@ In this case, a long homopolymer stretch results in an unclear sequence.
 
 -  **Re-mapping to consensus gives another consensus!**:
      During the clustering workflow, consensus sequences were not identical
-     before and after a re-mapping of reads. Consider inspecting as if this
-     was an ambiguous sequence.
-     *This should be better handled in the clustering procedure*
-
-  
+     before and after a re-mapping of reads. Consider inspecting the alignments
+     (see *ambig-consensus*).
+     *TODO: This should be better handled in the clustering procedure*
