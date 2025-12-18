@@ -34,10 +34,10 @@ All the settings are documented on top of the *get_barcodes* function in [cluste
    If the consensus does not match with the ASV sequence, there is a *consensus-diffs* issue is reported
    (see [curation](curation.md#list-of-issues)).
    Different sensitivity settings are tested sequentially if necessary (see workflow above).
-2. **Haplotype splitting**: Before attemting a more sensitive denoising, it is checked ASVs
-   with an ambiguous consensus, whether they can be split into two more or less abundant
-   *unambiguous* sub-sequences. This often works quite well.
-3. **Fixed-threshold clustering**: if there is not enough duplication in the top ASV(s),
+2. **Haplotype splitting**: Before attemting a more sensitive denoising, it is checked whether
+   DADA2 ASVs with ambiguities in the consensus can be further split into two *unambiguous* sub-sequences.
+   This sometimes works quite well, especially if there are two haplotypes with InDels relative to each other.
+4. **Fixed-threshold clustering**: if there is not enough duplication in the top ASV(s),
    fixed-threshold clustering is applied instead (single-linkage, 97% by default)
 
 ![cluster-illustration](img/cluster-illustration.png)
