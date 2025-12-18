@@ -3,6 +3,7 @@ site_name = "Nanopore barcoding pipeline"
 site_description = " Infer DNA barcodes fom recent (R10.4) Nanopore sequence data using a DADA2-based pipeline "
 site_author = "Markus Schlegel"
 site_url = "markschl.github.io/dada-ont-barcoding"
+repo_url = "https://github.com/markschl/dada-ont-barcoding"
 nav = [
   "index.md",
   "primers.md",
