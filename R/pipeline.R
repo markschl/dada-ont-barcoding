@@ -764,14 +764,23 @@ require_bash <- function() {
 
 #' Run a command in Bash, which should work on Linux, OS-X and Windows WSL
 #' **Note**: assuming **no** spaces in arguments
-run_bash <- function(cmd, ...) {
+run_bash <- function(cmd, stdout = '', stderr = '', ...) {
   cmd <- paste(cmd, collapse=' ')
-  system2('bash', c('-c', shQuote(cmd)), ...)
+  rv <- system2('bash', c('-c', shQuote(cmd)),
+                stdout = stdout, stderr = stderr, ...)
+  code <- if (isTRUE(stdout) || isTRUE(stderr)) {
+    attr(rv, 'status') %||% 0
+  } else {
+    rv
+  }
+  if (code != 0) {
+    stop('Command failed: ', cmd)
+  }
+  rv
 }
 
 bash_cmd_succeeds <- function(cmd) {
-  tryCatch(is.null(suppressWarnings(attr(run_bash(cmd, stderr=TRUE), 'status'))),
-           error=function(e) FALSE)
+  !is.null(tryCatch(run_bash(cmd, stderr=TRUE), error=function(e) NULL))
 }
 
 
