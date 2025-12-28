@@ -226,36 +226,36 @@ Steps:
 ## Primer trimming
 
 ```{r search-primers}
-demux_dir <- file.path(analysis_dir, 'tmp', 'demux')
+trim_dir <- file.path(analysis_dir, 'tmp', 'trim')
 
 args <- c(list(
   reads_fq,
   amplicon_primers,
-  demux_dir,
+  trim_dir,
   overwrite = FALSE
 ), opts$demultiplex)
 primer_stats <- do.call(run_primer_search, args)
 
 # stats
-tail_len_mean = primer_stats$tail_len %>% 
-    group_by(amplicon, primer_dir) %>% 
-    summarise(tail_len = weighted.mean(tail_len, count),
-              .groups='drop')
+tail_len_mean <- primer_stats$position %>% 
+  group_by(amplicon, dir) %>% 
+  summarise(tail_len = weighted.mean(pos - 1, count),
+            .groups='drop')
 
-amplen_mean = primer_stats$amplicon_len %>% 
+amplen_mean <- primer_stats$amplicon_len %>% 
   group_by(amplicon) %>%
   filter(category == 'regular') %>% 
   summarise(mean_len = weighted.mean(length, count))
-mean_len = mean(na.omit(amplen_mean$mean_len))
+max_mean_len = max(na.omit(amplen_mean$mean_len))
 
-count_stats <- primer_stats$primers %>% 
+count_stats <- primer_stats$counts %>% 
   group_by(amplicon, category) %>% 
   summarise(count = sum(count), .groups='drop')
 
-qual_stats = primer_stats$quality %>% 
+qual_stats <- primer_stats$quality %>% 
   mutate(
     primer_mis_grp = ifelse(!is.na(primer_mis) & primer_mis < 4, as.character(primer_mis), '4+'),
-    bc_mis_grp = ifelse(!is.na(bc_mis) & primer_mis < 2, as.character(primer_mis), '2+')
+    idx_mis_grp = ifelse(!is.na(idx_mis) & primer_mis < 2, as.character(primer_mis), '2+')
   )
 ```
 
@@ -287,16 +287,16 @@ full_join(
             'amplicon')
 ```
 
-A small part of the reads has tail lengths around the mean fragment length (or multiples of it), which indicates the presence of concatenated artifacts (Figures \@ref(fig:tail-stats), \@ref(fig:len-stats)).
+A small part of the reads has tail lengths around the mean fragment length (or multiples of it), which suggests the presence of concatenated PCR products (not shown).
 
-(ref:tail-stats) Distribution of the primer trimmed tail lengths (*note the non-linear scale*)
+(ref:tail-stats) (**not shown**) Distribution of the primer trimmed tail lengths (*note the non-linear scale*)
 
-```{r tail-stats, fig.width=6.7, fig.height=3, fig.cap='(ref:tail-stats)', warning=F}
-ggplot(primer_stats$tail_len, aes(tail_len)) +
+```{r tail-stats, eval=FALSE, fig.width=6.7, fig.height=3, fig.cap='(ref:tail-stats)', warning=F}
+ggplot(primer_stats$position, aes(pos - 1)) +
   geom_density(aes(weight=count), fill='#a6bddb', color='#2b8cbe', adjust=.1) +
-  facet_grid(primer_dir ~ amplicon, scales='free') +
+  facet_grid(dir ~ amplicon, scales='free') +
   scale_y_sqrt(breaks = 10^(-4:0), expand=expansion(mult=c(0, .05))) +
-  scale_x_continuous(limits=c(0, 1.4*mean_len), expand=expansion()) +
+  scale_x_continuous(limits=c(0, 1.4*max_mean_len), expand=expansion()) +
   guides(fill=guide_none()) +
   labs(x='Tail length (bp)', y='Density') +
   theme(strip.text.y=element_text(angle=0))
@@ -313,7 +313,7 @@ ggplot(d, aes(length, fill=category, color=category)) +
   geom_density(aes(weight=count), adjust=.1) +
   facet_grid(category ~ amplicon, scales='free') +
   scale_y_continuous(expand=expansion(mult=c(0, .05))) +
-  scale_x_continuous(limits=c(0, 2.5*mean_len), expand=expansion()) +
+  scale_x_continuous(limits=c(0, 2.5*max_mean_len), expand=expansion()) +
   labs(x='Trimmed fragment length (bp)', y='Density', fill=NULL) +
   scale_fill_manual(values=c(regular='#a6bddb', 'contains primer'='lightgrey'), guide='none') +
   scale_color_manual(values=c(regular='#2b8cbe', 'contains primer'='darkgrey'), guide='none') +
@@ -330,20 +330,20 @@ According to Figure \@ref(fig:mismatch-stats), reads with many primer or sample 
 
 ```{r mismatch-stats, fig.width=6.7, fig.height=3.5, fig.cap='(ref:mismatch-stats)', warning=FALSE}
 # remove amplicons without data
-p1 = qual_stats %>%
-  group_by(bc_mis, primer_mis) %>% 
+p1 <- qual_stats %>%
+  group_by(idx_mis, primer_mis) %>% 
   summarise(exp_err = weighted.mean(exp_err, count), .groups='drop') %>% 
-  ggplot(aes(bc_mis, primer_mis, fill=exp_err)) +
+  ggplot(aes(idx_mis, primer_mis, fill=exp_err)) +
   geom_tile() +
   scale_x_continuous(breaks=0:20) +
   scale_y_continuous(breaks=0:20) +
   scale_fill_distiller(palette='Spectral',
                        guide=guide_colorbar(title.position='top')) +
   theme(legend.position='bottom') +
-  labs(x='Barcode mismatches', y='Primer mismatches',
+  labs(x='Index mismatches', y='Primer mismatches',
        fill='Expected sequencing errors')
 
-count_plot_cfg = list(
+count_plot_cfg <- list(
   scale_y_continuous(labels = scales::label_number(scale_cut = scales::cut_short_scale()),
                      expand = expansion(mult = c(0, 0.05))),
   scale_fill_brewer(palette='Set1',
@@ -354,7 +354,7 @@ count_plot_cfg = list(
   
 )
 
-p2 = qual_stats %>%
+p2 <- qual_stats %>%
   group_by(exp_err=cut(exp_err, c(-1:5, Inf)), primer_mis_grp) %>% 
   summarise(count = sum(count), .groups='drop') %>% 
   ggplot(aes(exp_err, count, fill=as.factor(primer_mis_grp))) +
@@ -362,13 +362,13 @@ p2 = qual_stats %>%
   count_plot_cfg +
   labs(fill='Primer mismatches')
 
-p3 = qual_stats %>%
-  group_by(exp_err=cut(exp_err, c(-1:5, Inf)), bc_mis_grp) %>% 
+p3 <- qual_stats %>%
+  group_by(exp_err=cut(exp_err, c(-1:5, Inf)), idx_mis_grp) %>% 
   summarise(count = sum(count), .groups='drop') %>% 
-  ggplot(aes(exp_err, count, fill=as.factor(bc_mis_grp))) +
+  ggplot(aes(exp_err, count, fill=as.factor(idx_mis_grp))) +
   geom_col() +
   count_plot_cfg +
-  labs(fill='Barcode mismatches')
+  labs(fill='Index mismatches')
 
 (p1 | p2 | p3) +
   plot_layout(widths=c(3, 3, 3)) +
@@ -378,22 +378,21 @@ p3 = qual_stats %>%
 (ref:readstats) Read counts by category
 
 ```{r readstats, fig.width=6.7, fig.height=1.8+0.2*length(amplicons), fig.cap='(ref:readstats)'}
-d <- primer_stats$primers %>% 
+d <- primer_stats$counts %>% 
   group_by(category, valid) %>% 
   summarise(count = sum(count), .groups='drop')
 
 ee <- qual_stats %>% 
-  filter(!is.na(bc_mis) & !is.na(primer_mis)) %>% 
+  filter(!is.na(idx_mis) & !is.na(primer_mis)) %>% 
   group_by(amplicon, category = paste(cut(exp_err, c(-1:5, Inf)), 'errors')) %>% 
   summarise(
     count = sum(count),
     .groups = 'drop'
   )
 
-# TODO: check number mismatch
-# stopifnot(sum(d$count[d$valid]) == sum(ee$count))
+stopifnot(sum(d$count[d$valid]) == sum(ee$count))
 
-invalid_lab <- 'no primer(s)/fusion artifact'
+invalid_lab <- 'invalid'
 d.ee <- bind_rows(
   d %>% 
     filter(!valid) %>% 
@@ -419,7 +418,7 @@ ggplot(d.ee, aes(group, count, fill=category)) +
 ```{r filter-demultiplex}
 # Do error filtering and distribute by barcode
 demux_out <- file.path(demux_dir, 'by_sample')
-primer_search_fq <- file.path(demux_dir, amplicons, 'demux.fastq.zst')
+primer_search_fq <- file.path(trim_dir, amplicons, 'trimmed.fastq.zst')
 args <- list(
   primer_search_fq = primer_search_fq,
   outdir = demux_out,

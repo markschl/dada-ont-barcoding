@@ -11,4 +11,4 @@ shift 4
 demux_fq="$@"
 
 $seqtool filter "exp_err <= $exp_err && seqlen >= $min_len" $demux_fq |
-  $seqtool split --fq -po "$out/{attr(fbc)}-{attr(rbc)}.fastq.gz"
+  $seqtool split --fq -po "$out/{attr(fi)}-{attr(ri)}.fastq.gz"

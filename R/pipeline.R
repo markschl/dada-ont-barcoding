@@ -123,15 +123,15 @@ parse_primer_tab <- function(primer_tab, amplicons = NULL) {
                      d$primer_name[1]))
       }
       stopifnot(!duplicated(d$barcode))
-      bc_len <- unique(nchar(d$barcode))
-      if (length(bc_len) != 1) {
+      idx_len <- unique(nchar(d$barcode))
+      if (length(idx_len) != 1) {
         # TODO: in theory we could support this (just affects how we trim the sequences before the primer)
         stop(sprintf("The barcodes for primer '%s' should all have the same length", primer))
       }
       list(
         primer = setNames(primer, d$primer_name[1]),
         barcode = setNames(d$barcode, d$primer_barcode),
-        barcode_len = bc_len
+        barcode_len = idx_len
       )
     })
   })
@@ -139,117 +139,110 @@ parse_primer_tab <- function(primer_tab, amplicons = NULL) {
 
 run_primer_search <- function(fq_paths,
                               amplicon_primers,
-                              demux_dir,
+                              search_dir,
                               primer_max_err = 2.5,
                               idx_max_diffs = 0,
                               min_barcode_length = 50,
-                              overwrite=FALSE,
+                              overwrite = FALSE,
                               ...) {
   amplicons <- names(amplicon_primers)
   for (amplicon in amplicons) {
-    amp_demux_dir <- file.path(demux_dir, amplicon)
-    demux_fq <- file.path(amp_demux_dir, 'demux.fastq.zst')
+    amp_search_dir <- file.path(search_dir, amplicon)
+    demux_fq <- file.path(amp_search_dir, 'trimmed.fastq.zst')
     
     if (overwrite || !file.exists(demux_fq) && length(fq_paths) > 0) {
       cat(amplicon, sep='\n', file=stderr())
-      unlink(amp_demux_dir)  # clean up old files
-      dir.create(amp_demux_dir, FALSE, TRUE)
+      unlink(amp_search_dir)  # clean up old files
+      dir.create(amp_search_dir, FALSE, TRUE)
       amp_pr <- amplicon_primers[[amplicon]]
-      seq_prefix <- file.path(amp_demux_dir, '')
+      seq_prefix <- file.path(amp_search_dir, '')
       primer_paths <- paste0(seq_prefix, c('fwd', 'rev'), '_primers.fasta')
       idx_paths <- paste0(seq_prefix, c('fwd', 'rev'), '_idx.fasta')
       for (i in 1:2) {
         write_dna(amp_pr[[i]]$primer, primer_paths[i])
         write_dna(amp_pr[[i]]$barcode, idx_paths[i])
       }
-      demux_opts <- c(
+      search_opts <- c(
         '-p', primer_max_err,
         '-b', idx_max_diffs,
         '-l', min_barcode_length,
-        '-o', amp_demux_dir,
+        '-o', amp_search_dir,
+        '-c', 'zst',
         '-t', cores,
         '-s', .programs$seqtool
       )
-      run_bash(c('scripts/find-primers.sh', demux_opts, seq_prefix, fq_paths))
+      run_bash(c('scripts/find-primers.sh', search_opts, seq_prefix, fq_paths))
     }
     # input for next amplicon search
-    fq_paths <- file.path(amp_demux_dir, c(
-      list.files(amp_demux_dir, pattern='no_.+.fastq.zst')
-      # # even though the following files are very unlikely to contain anything useful
-      # # for the next round, we include *all* files that did not pass the previous round
-      # 'fusion_artifact.fastq.zst',
-      # 'ambiguous_barcode.fastq.zst'
-    ))
+    fq_names <- paste0('no_',
+                       c('primer.fwd', 'primer.rev', 'index.fwd', 'index.rev'),
+                       '.fastq.zst')
+    fq_paths <- file.path(amp_search_dir, fq_names)
   }
   
   # read stats files
-  # TODO: move these files to better location
+  # TODO: move these files to better location?
   
-  # primer start position (tail length)
-  t <- do.call(rbind, lapply(amplicons, function(amplicon) {
-    do.call(rbind, lapply(c('f', 'r'), function(dir) {
-      d <- read.delim(file.path(demux_dir, amplicon, paste0(dir, '_primer_pos.tsv')),
-                     colClasses='integer')
-      # reverse primer positions are negative in the stats file
-      d$tail_len = abs(d$pos) - 1
-      d$amplicon <- amplicon
-      is_fwd <- if (dir == 'f') d$pos > 0 else d$pos < 0
-      d$primer_dir <- ifelse(is_fwd, 'forward', 'reverse')
-      aggregate(count ~ amplicon + tail_len + primer_dir, data=d, sum)
-    }))
+  # primer start position
+  pos <- do.call(rbind, lapply(amplicons, function(amplicon) {
+    d <- read.delim(file.path(search_dir, amplicon, 'primer_pos.tsv'),
+                  colClasses=c('character', 'integer', 'integer'))
+    d$amplicon <- amplicon
+    d$dir <- factor(d$dir, c('fwd', 'rev'), c('forward', 'reverse'))
+    aggregate(count ~ amplicon + dir + pos, data=d, sum)
   }))
   
   # amplicon length
-  category_trans <- c(demux='regular', fusion_artifact='contains primer')
+  category_trans <- c(trimmed='regular', concatenated='concatenated products')
   l <- do.call(rbind, lapply(names(amplicon_primers), function(amplicon) {
-    d <- read.delim(file.path(demux_dir, amplicon, 'length_stats.tsv'),
+    d <- read.delim(file.path(search_dir, amplicon, 'length_stats.tsv'),
                     colClasses=c('character', 'integer', 'integer'))
     d$amplicon <- amplicon
     d
   }))
-  l$category <- trimws(gsub('\\.fastq.*$', '', l$file))
+  l$category <- trimws(gsub('\\.fastq\\.zst$', '', l$file))
   l$category = factor(category_trans[l$category], category_trans)
   l$file <- NULL
 
   # primer/index counts
-  p <- do.call(rbind, lapply(seq_along(amplicons), function(i) {
-    d <- read.delim(file.path(demux_dir, amplicons[i], 'demux_stats.tsv'),
+  n <- do.call(rbind, lapply(seq_along(amplicons), function(i) {
+    d <- read.delim(file.path(search_dir, amplicons[i], 'trim_counts.tsv'),
                colClasses=c('character', 'integer'))
-    d$file <- gsub('\\.fastq.*$', '', d$file)
-    d$valid <- d$file == 'demux'
+    d$file <- trimws(gsub('\\.fastq\\.zst$', '', d$file))
+    d$valid <- d$file == 'trimmed'
     if (i != length(amplicons)) {
-      # all data used in the subsequence primer searches should be excluded
+      # all data used in subsequent primer searches should be excluded
       d <- d[!startsWith(d$file, 'no_'),]
     }
     d$amplicon <- amplicons[i]
     d
   }))
-  s <- stringr::str_split_fixed(p$file, stringr::fixed('.'), 2)
-  p$direction <- s[,2]
-  p$category = ifelse(
-    p$valid,
+  s <- stringr::str_split_fixed(n$file, stringr::fixed('.'), 2)
+  n$direction <- s[,2]
+  n$category = ifelse(
+    n$valid,
     'valid amplicon',
     gsub('_', ' ', s[,1])
   )
-  p$file <- NULL
+  n$file <- NULL
 
   # quality
   q <- do.call(rbind, lapply(seq_along(amplicons), function(i) {
-    d <- read.delim(file.path(demux_dir, amplicons[i], 'read_stats.tsv'),
+    d <- read.delim(file.path(search_dir, amplicons[i], 'qual_stats.tsv'),
                colClasses=c('character', rep('integer', 7)),
                na.strings = 'undefined')
     d$amplicon <- amplicons[i]
     d$exp_err = as.integer(gsub(r'{\(\d+, (\d+)\]}', '\\1', d$exp_err))
     d$primer_mis = d$f_primer_mis + d$r_primer_mis
-    d$bc_mis = d$f_bc_mis + d$r_bc_mis
+    d$idx_mis = d$f_idx_mis + d$r_idx_mis
     if (i != length(amplicons)) {
       # all data used in the subsequence primer searches should be excluded
-      d <- d[!is.na(d$primer_mis) & !is.na(d$bc_mis),]
+      d <- d[!is.na(d$primer_mis) & !is.na(d$idx_mis),]
     }
     d
   }))
 
-  list(tail_len = t, amplicon_len = l, primers = p, quality = q)
+  list(position = pos, amplicon_len = l, counts = n, quality = q)
 }
 
 
