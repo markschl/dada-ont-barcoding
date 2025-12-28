@@ -492,6 +492,10 @@ create_report <- function(seq_tab,
   )
   wb$add_formula(
     x=sprintf('IFERROR(VLOOKUP(%s, sequences!$A:$D, 3, 0), "")', uref),
+    dims=wb_dims(drow_i, match('short_lineage', dcols))
+  )  
+  wb$add_formula(
+    x=sprintf('IFERROR(VLOOKUP(%s, sequences!$A:$D, 4, 0), "")', uref),
     dims=wb_dims(drow_i, match('taxon', dcols))
   )
 
