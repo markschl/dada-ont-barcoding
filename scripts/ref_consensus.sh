@@ -26,13 +26,14 @@ $minimap2 -ax map-ont -t $cores "$ref" "$reads" 2>/dev/null |
 $samtools index "$out".bam
 rm -f "$ref".fai
 
-# Wbtain the consensus sequence with ambiguities (-A)
-# without any heterzygosity adjustments (-H 2)
+# Obtain the consensus sequence with ambiguities (-A)
+# without any heterzygosity adjustments (-H 1000)
 # (+ other arguments passed to the script)
+# Important: --show-ins is true (samtools default) -> consensus includes insertions relative to reference
 $samtools consensus \
   -A \
   -l 0 \
-  -H 2 \
+  -H 1000 \
   -@ $cores \
   "$@" \
   -o "$out"_consensus.fasta \

@@ -465,6 +465,7 @@ seq_tab <- run_clustering(
   dada_err,
   cache_file = file.path(analysis_dir, 'tmp/cluster.rds'),
   aln_out = aln_out,
+  tmp_dir = opts$tmp_dir,
   cores = cores,
   opts = opts$cluster,
   overwrite = FALSE
@@ -508,13 +509,13 @@ depth_scale = list(
   scale_x_log10()
 )
 
-pabund = ggplot(d, aes(n_seqs, fill=method)) +
+pabund = ggplot(d, aes(n_reads, fill=method)) +
   geom_histogram(binwidth = max(1, round(max_sample_depth / 50))) +
   scale_y_continuous(expand=expansion(mult=c(0, .05))) +
   method_scale('horizontal') +
   labs(x = 'Read depth in sample')
 
-psingle = ggplot(d, aes(n_seqs, singleton_frac,
+psingle = ggplot(d, aes(n_reads, singleton_frac,
                         color=method)) +
   geom_point(size=0.9, alpha=.6, show.legend = TRUE) +
   depth_scale +
@@ -558,8 +559,8 @@ In rare cases, the alignment consensus does not match the inferred DADA2 ASV seq
 
 ```{r cluster-validation2, fig.width=6.7, fig.height=4.5, message=FALSE, warning=FALSE, fig.cap='(ref:cluster-validation2)'}
 group_limit = function(x, lim) factor(
-  ifelse(x <= lim, as.character(x), paste('>', lim)),
-  levels = c(0:lim, paste('>', lim))
+  ifelse(x < lim, as.character(x), paste0(lim, '+')),
+  levels = c(0:lim, paste0(lim, '+'))
 )
 
 d$cons_ambigs_ = group_limit(d$top_seq_consensus_ambigs, 10)
@@ -571,7 +572,7 @@ amhist = ggplot(d, aes(cons_ambigs_, fill=method)) +
   method_scale('horizontal') +
   labs(x = 'Ambiguities in consensus')
 
-amdepth = ggplot(d, aes(n_seqs, cons_ambigs_,
+amdepth = ggplot(d, aes(n_reads, cons_ambigs_,
                         color=method)) +
   method_jitter +
   depth_scale +
@@ -586,7 +587,7 @@ mhist = ggplot(d_dada, aes(cons_diffs_, fill=method)) +
   method_scale('horizontal') +
   labs(x = 'DADA2 ASV vs. consensus mismatches')
 
-mdepth = ggplot(d_dada, aes(n_seqs, cons_diffs_,
+mdepth = ggplot(d_dada, aes(n_reads, cons_diffs_,
                        color=method)) +
   method_jitter +
   scale_y_discrete(expand=expansion(mult=c(.05, .1))) +
@@ -611,21 +612,21 @@ The proportion of reads belonging to the final (probably specific) clusters is u
 
 ```{r polymorphisms, fig.width=6.7, fig.height=4.5, message=FALSE, warning=FALSE, fig.cap='(ref:polymorphisms)'}
 # TODO: investigate/filter contaminants present in (almost) every sample
-d$n_hap_ = group_limit(d$top_n_seqs, 10)
-hhist = ggplot(d, aes(n_hap_, fill=method)) +
+d$n_seq_ = group_limit(d$top_n_reads, 10)
+hhist = ggplot(d, aes(n_seq_, fill=method)) +
   geom_bar() +
   scale_y_continuous(expand=expansion(mult=c(0, .05))) +
   method_scale() +
-  labs(x = 'haplotypes per taxon')
+  labs(x = 'barcode sequences per taxon')
 
-hdepth = ggplot(d, aes(n_seqs, n_hap_, color=method)) +
+hdepth = ggplot(d, aes(n_reads, n_seq_, color=method)) +
   method_jitter +
   depth_scale +
   method_scale() +
   scale_y_discrete(expand=expansion(mult=c(.05, .1))) +
-  labs(x = 'Read depth', y = 'haplotypes per taxon')
+  labs(x = 'Read depth', y = 'barcode sequences per taxon')
 
-pspec = ggplot(d, aes(n_seqs, target_cluster_frac,
+pspec = ggplot(d, aes(n_reads, target_cluster_frac,
                          color=method)) +
   method_points +
   depth_scale +
@@ -680,7 +681,7 @@ A barcode sequence (more precisely, a `r (opts$cluster$cluster_threshold %||% 0.
 `r if (any(seq_tab$has_contamination)) 'The following barcodes were found to contain strong contamination:\n'`
 
 ```{r render=pander::pander}
-has_seqs = seq_tab$n_seqs > 0
+has_seqs = seq_tab$n_reads > 0
 if (any(seq_tab$has_contamination)) {
   cont = seq_tab[seq_tab$has_contamination, ]
   cont$contaminants = sapply(cont$clustering, function(d) paste(unique(d$taxon[d$is_contaminant]), collapse=', '))
@@ -704,7 +705,7 @@ d <- seq_tab %>%
     lineage = top_seq_short_lineage,
     nmatch = top_seq_matching_ranks,
     nmismatch = top_seq_mismatching_ranks,
-    n_seqs
+    n_reads
   ) %>%
   filter(!is.na(plate)) %>%
   mutate(
@@ -713,8 +714,8 @@ d <- seq_tab %>%
     lineage = factor(
       case_when(
         lineage %in% abundant.lineages ~ stringr::str_trunc(lineage, 50),
-        n_seqs > 0 ~ 'Other',
-        n_seqs == 0 ~ '(no sequence)'
+        n_reads > 0 ~ 'Other',
+        n_reads == 0 ~ '(no sequence)'
       ),
       c(unique(
         stringr::str_trunc(abundant.lineages, 50)
@@ -756,7 +757,7 @@ For samples with putative contaminants, the clustering is re-run without sample 
 
 ```{r re-cluster-contaminants}
 # cluster and assign taxonomy
-sel <- seq_tab$has_contamination & seq_tab$n_seqs >= max_sample_depth
+sel <- seq_tab$has_contamination & seq_tab$n_reads >= max_sample_depth
 if (any(sel)) {
   for (amplicon in unique(seq_tab$amplicon[sel])) {
     t <- run_clustering(
@@ -798,7 +799,7 @@ if (nrow(d) > 0) {
     scale_y_continuous(expand = expansion(mult=c(0, 0.05))) +
     labs(x = 'Mismatches to\nknown sequence')
   
-  p <- ggplot(d, aes(n_seqs, known_seq_diffs)) +
+  p <- ggplot(d, aes(n_reads, known_seq_diffs)) +
     geom_point(size=0.8, color='#2b8cbe') +
     depth_scale +
     scale_y_discrete(expand = expansion(mult=c(0.05, 0.1))) +

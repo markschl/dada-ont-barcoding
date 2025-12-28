@@ -307,11 +307,12 @@ run_demux <- function(primer_search_fq,
 }
 
 # run clustering
-cluster_fq <- function(fq, known_seq, aln_out, opts=NULL) {
-  cat(fq, '\n')
+cluster_fq <- function(fq, known_seq, aln_out, opts = NULL, tmp_dir = NULL) {
+  # cat(fq, '\n')
   out_prefix <- get_aln_prefix(fq, aln_out)
   args <- modifyList(opts %||% list(), 
                     list(fq = fq, out_prefix = out_prefix,
+                         tmp_dir = tmp_dir,
                          minimap2 = .programs$minimap2,
                          samtools = .programs$samtools))
   d <- do.call(get_barcodes, args)
@@ -355,10 +356,11 @@ run_clustering <- function(seq_tab,
                            cache_file,
                            aln_out, 
                            opts = NULL,
+                           tmp_dir = NULL,
                            cores = 1,
                            overwrite = FALSE) {
   # for parallel::clusterExport
-  cluster_export <- c('cluster_fq', 'opts', 
+  cluster_export <- c('cluster_fq', 'opts', 'tmp_dir',
                      '.programs', 'dada_err', 'aln_out', 'get_aln_prefix',
                      'seq_tab', get_barcodes_export)
   idx <- seq_len(nrow(seq_tab))
@@ -371,10 +373,10 @@ run_clustering <- function(seq_tab,
   if (length(sel_comb) > 0) {
     res <- run_or_load(cache_file, function() {
       parallel_lapply(idx[sel_comb], function(i) {
-        # i=which(seq_tab$primer_indexes=='b27F_bc331-b1492R_bc548')
+        # i=which(seq_tab$primer_indexes=='...')
         fq <- seq_tab$reads_path[i]
         known_seq <- seq_tab$known_sequence[i]
-        cluster_fq(fq, known_seq, aln_out, opts = opts)
+        cluster_fq(fq, known_seq, aln_out, opts = opts, tmp_dir = tmp_dir)
       }, cores=cores, export=cluster_export)
     }, rerun = overwrite)
     if (length(intersect(sel_comb, names(res))) != length(sel_comb)) {
@@ -390,14 +392,14 @@ run_clustering <- function(seq_tab,
 #' Propagate information from nested cluster tables to the main seq_tab
 propagate_data <- function(seq_tab, haplo_extra_cols=NULL) {
   # Propagate sample-level attributes to seq_tab
-  attr_cols <- c('n_seqs', 'n_singletons', 'omega_a')
+  attr_cols <- c('n_reads', 'n_singletons', 'omega_a')
   for (a in attr_cols) {
     seq_tab[[a]] = sapply(seq_tab$clustering, function(cl) attr(cl, a) %||% NA)
   }
-  seq_tab$n_seqs[is.na(seq_tab$n_seqs)] = 0
-  seq_tab$singleton_frac = with(seq_tab, n_singletons / n_seqs)
+  seq_tab$n_reads[is.na(seq_tab$n_reads)] = 0
+  seq_tab$singleton_frac = with(seq_tab, n_singletons / n_reads)
   
-  # Propagate extra information from the top organism group to seq_tab
+  # Propagate extra information from the top taxon to seq_tab
   summary_cols <- list(
     list(c('abundance', 'max_identical', 'n0'), sum),
     list(c('max_homopoly_len'), max)
@@ -406,7 +408,7 @@ propagate_data <- function(seq_tab, haplo_extra_cols=NULL) {
     for (col in sc[[1]]) {
       seq_tab[[paste0('top_', col)]] = sapply(seq_tab$clustering, function(d) 
         if (!is.null(d)) {
-          d <- filter(d, group == group[1])
+          d <- filter(d, taxon_num == taxon_num[1])
           sc[[2]](d[[col]])
         } else NA
       )
@@ -424,10 +426,10 @@ propagate_data <- function(seq_tab, haplo_extra_cols=NULL) {
   }
   
   # more information
-  seq_tab$top_n_seqs = sapply(seq_tab$clustering, function(d) {
-    if (is.null(d)) 0 else sum(d$group == d$group[1] & !d$is_rare)
+  seq_tab$top_n_reads = sapply(seq_tab$clustering, function(d) {
+    if (is.null(d)) 0 else sum(d$taxon_num == d$taxon_num[1] & !d$is_rare)
   })
-  seq_tab$target_cluster_frac = with(seq_tab, top_abundance / n_seqs)
+  seq_tab$target_cluster_frac = with(seq_tab, top_abundance / n_reads)
   
   seq_tab
 }
@@ -515,7 +517,7 @@ run_taxonomy_assignment <- function(seq_tab,
   auto_lineages <- cbind(name = taxname, auto_lineages)
 
   # taxa names and short lineages add to seq_tab
-  has_seqs <- seq_tab$n_seqs > 0
+  has_seqs <- seq_tab$n_reads > 0
   seq_tab$clustering[has_seqs] = lapply(seq_tab$clustering[has_seqs], function(d) {
     unique_id <- unique_map[d$consensus]
     d$taxon = auto_lineages[unique_id, 'name']
@@ -534,11 +536,11 @@ run_taxonomy_assignment <- function(seq_tab,
     unique_id <- unique_map[d$consensus]
     stopifnot(!is.na(unique_id))
     lineages <- auto_lineages[unique_id, , drop = F]
-    # assign to contaminant if any member of a group has a known contaminant genus
+    # assign to contaminant if any member of a taxon has a known contaminant genus
     d$is_contaminant = FALSE
     for (rank in setdiff(names(known_contaminants), colnames(lineages))) {
       taxa <- known_contaminants[[rank]]
-      as.logical(ave(lineages[, rank] %in% taxa, d$group, FUN = max))
+      as.logical(ave(lineages[, rank] %in% taxa, d$taxon_num, FUN = max))
     }
     d
   })
@@ -575,9 +577,9 @@ run_taxonomy_assignment <- function(seq_tab,
       # cat(i, '\n')
       d <- seq_tab$clustering[[i]]
       taxon <- seq_tab$morpho_taxon[i]
-      # sort by group and abundance (in case it has been reordered above)
-      max_abund <- ave(d$abundance, d$group, FUN = max)
-      d <- d[order(-max_abund, d$group, -d$abundance), ]
+      # sort by taxon and abundance (in case it has been reordered above)
+      max_abund <- ave(d$abundance, d$taxon_num, FUN = max)
+      d <- d[order(-max_abund, d$taxon_num, -d$abundance), ]
       # calculate taxa overlap (proportion of matching names in the lineage)
       morpho_lineage <- morpho_lineages_gbif[taxon, ]
       unique_id <- unique_map[d$consensus]
@@ -586,7 +588,7 @@ run_taxonomy_assignment <- function(seq_tab,
       lineage_cmp <- t(apply(seq_lineages, 1, function(l) l == morpho_lineage))
       d$matching_ranks = rowSums(lineage_cmp, na.rm = TRUE)
       d$mismatching_ranks = rowSums(!lineage_cmp, na.rm = TRUE)
-      if (all(d$group == d$group[1])) {
+      if (all(d$taxon_num == d$taxon_num[1])) {
         return(d)
       }
       # when doing pairwise comparisons of all seqs to the top one, make sure
@@ -599,8 +601,8 @@ run_taxonomy_assignment <- function(seq_tab,
       )
       rownames(lineage_cmp) <- d$taxon
       matching_ranks_adj <- rowSums(lineage_cmp, na.rm=TRUE)
-      # average the mismatch score by group (we only move whole clusters to the front)
-      matching_ranks_adj <- ave(matching_ranks_adj, d$group)
+      # average the mismatch score by taxon (we only move whole clusters to the front)
+      matching_ranks_adj <- ave(matching_ranks_adj, d$taxon_num)
       # by how many ranks does the overlap improve if choosing another variant?
       match_delta <- matching_ranks_adj - matching_ranks_adj[1]
       # flag already assigned (known) contaminants
@@ -613,8 +615,8 @@ run_taxonomy_assignment <- function(seq_tab,
       }
       if (any(match_delta > 0)) {
         best_i <- which.max(match_delta)
-        best_i <- which(d$group == d$group[best_i])[1]
-        if (any(d$group != d$group[1]) && best_i > 1) {
+        best_i <- which(d$taxon_num == d$taxon_num[best_i])[1]
+        if (any(d$taxon_num != d$taxon_num[1]) && best_i > 1) {
           # flag all groups up to the best one
           d$is_contaminant[1:(best_i-1)] = TRUE
         }
@@ -624,25 +626,26 @@ run_taxonomy_assignment <- function(seq_tab,
   }
   
   # move contaminant compound clusters down to be located *after*
-  # the most abundant non-contaminant group,
+  # the most abundant non-contaminant taxon,
   # and after this, do some more checks
   seq_tab$has_contamination = sapply(seq_tab$clustering, function(d) isTRUE(d$is_contaminant[1]))
   seq_tab$clustering[has_seqs] = lapply(which(has_seqs), function(i) {
     # cat(i, ' ')
     d <- seq_tab$clustering[[i]]
-    # also sort by group and abundance (in case it has been reordered above)
-    max_abund <- ave(d$abundance, d$group, FUN = max)
-    d <- d[order(d$is_contaminant, -max_abund, d$group, -d$abundance), ]
+    # also sort by taxon and abundance (in case it has been reordered above)
+    taxon_abund <- ave(ifelse(d$is_rare, 0, d$abundance), d$taxon_num, FUN=sum)
+    d <- d[order(d$is_contaminant, -taxon_abund, d$taxon_num, -d$abundance), ]
+
     # add 'unspecific'
-    d$unspecific = d$group != d$group[1] | d$is_rare
+    d$unspecific = d$taxon_num != d$taxon_num[1] | d$is_rare
     
     # check group1 over-abundance
-    grp <- unique(d$group)
+    grp <- unique(d$taxon_num)
     if (length(grp) > 1) {
-      grp_abund <- ave(d$abundance, d$group, FUN=sum)
-      is_grp1 <- d$group == grp[1]
+      grp_abund <- ave(d$abundance, d$taxon_num, FUN=sum)
+      is_grp1 <- d$taxon_num == grp[1]
       abund_ratio <- grp_abund[is_grp1][1] / grp_abund
-      if (abund_ratio[d$group == grp[2]][1] < 3) {
+      if (abund_ratio[d$taxon_num == grp[2]][1] < 3) {
         d$message[is_grp1] <- paste(
           d$message[is_grp1],
           '< 3 times overabundant;'
@@ -653,9 +656,9 @@ run_taxonomy_assignment <- function(seq_tab,
       unique_id <- unique_map[d$consensus]
       seq_lineages <- auto_lineages_gbif[unique_id,, drop = FALSE]
       lineage_cmp <- t(apply(seq_lineages, 1, function(l) l == seq_lineages[1,]))
-      rank_match <- ave(rowSums(lineage_cmp, na.rm = TRUE), d$group)
+      rank_match <- ave(rowSums(lineage_cmp, na.rm = TRUE), d$taxon_num)
       rank_match_delta <- rank_match[1] - rank_match
-      rank_mismatch <- ave(rowSums(!lineage_cmp, na.rm = TRUE), d$group)
+      rank_mismatch <- ave(rowSums(!lineage_cmp, na.rm = TRUE), d$taxon_num)
       if (any(!is_grp1 & abund_ratio < 8 & rank_mismatch < 2 & rank_match_delta < 2)) {
         d$message[is_grp1] <- paste(
           d$message[is_grp1],
@@ -686,7 +689,7 @@ compare_known_seqs <- function(seq_tab, aln_out, cores = 1) {
     seq_tab$known_sequence = NA
   }
   
-  has_known_seqs <- seq_tab$n_seqs > 0 & !is.na(seq_tab$known_sequence)
+  has_known_seqs <- seq_tab$n_reads > 0 & !is.na(seq_tab$known_sequence)
   if (any(has_known_seqs)) {
     seq_tab$clustering[has_known_seqs] = pbapply::pblapply(which(has_known_seqs), function(i) {
       d <- seq_tab$clustering[[i]]
@@ -711,13 +714,13 @@ compare_known_seqs <- function(seq_tab, aln_out, cores = 1) {
         if (d$known_seq_dir[best_i] == 2) {
           seq_tab$known_sequence[i] <- rev_complement(seq_tab$known_sequence[i])
         }
-        if (d$group[sel][best_i] == d$group[1]) {
+        if (d$taxon_num[sel][best_i] == d$taxon_num[1]) {
           if (sd[best_i] > 0) {
             out_prefix <- get_aln_prefix(seq_tab$reads_path[i], aln_out)
             align_top(d, out_prefix, known_seq = seq_tab$known_sequence[i])
           }
         } else {
-          is_g1 <- d$group == d$group[1]
+          is_g1 <- d$taxon_num == d$taxon_num[1]
           d$message[is_g1] <- paste(d$message[is_g1], 'Known seq. matches other taxon in mix;')
         }
         return(sd[best_i])

@@ -2,6 +2,12 @@
 # (more = faster, but more memory;  for clustering the usage can sometimes be 3GB per core)
 cores: 4
 
+# Temporary directory for short-lived files created during the clustering process.
+# If the 'analysis' directory is on a slow filesystem (e.g. HDD), setting
+# 'tmp_dir' to a location on a fast SSD or even RAM (e.g. https://en.wikipedia.org/wiki/Tmpfs)
+# may considerably speed up the process
+tmp_dir: /run/user/1000/dada-ont-barcoding
+
 # Sample de-multiplexing
 # (search and remove primers + sample indexes, filter by quality)
 demultiplex:

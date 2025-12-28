@@ -8,7 +8,7 @@ create_report <- function(seq_tab,
                           max_seqs = 6,
                           ...) {
   
-  seq_tab_def <- seq_tab[!is.na(seq_tab$sample) | !is.na(seq_tab$n_seqs) & seq_tab$n_seqs >= min_seqs,]
+  seq_tab_def <- seq_tab[!is.na(seq_tab$sample) | !is.na(seq_tab$n_reads) & seq_tab$n_reads >= min_seqs,]
 
   # TODO: should issues only be reported for most abundant seq or for all?
   #   (right now: for all)
@@ -71,7 +71,7 @@ create_report <- function(seq_tab,
   
   # general information
   
-  max_n_seq <- max(seq_tab_def$top_n_seqs, na.rm=T)
+  max_n_seq <- max(seq_tab_def$top_n_reads, na.rm=T)
   n_clust <- min(max_n_seq, max_seqs %||% 6)
   n_curate <- min(max_n_seq, n_curate %||% 2)
   
@@ -97,8 +97,8 @@ create_report <- function(seq_tab,
   fixed_cols <- c(
     'amplicon', 'plate', 'well',
     'indexes', 'data link'='link', 'sample', 'sample_type',
-    'issues', '# seqs'='top_n_seqs', '# ambig'='top_seq_consensus_ambigs',
-    '# seqs'='n_seqs', '% assigned'='target_cluster_frac',
+    'issues', '# seqs'='top_n_reads', '# ambig'='top_seq_consensus_ambigs',
+    '# seqs'='n_reads', '% assigned'='target_cluster_frac',
     'morpho_taxon', 'auto-lineage'='top_seq_short_lineage', 'auto-taxon'='top_seq_taxon', 'matching ranks',
     'seq'='known_sequence', 'diffs'='known_seq_diffs',
     'comment'='final_comment'
@@ -188,7 +188,7 @@ create_report <- function(seq_tab,
   
   info <- list(
     'indexes' = 'Forward-reverse sample index combination',
-    'top_n_seqs' = paste(
+    'top_n_reads' = paste(
       'Number of haplotypes/polymorphic sequence variants for the top taxon'
     ),
     'top_seq_consensus_ambigs' = paste(
@@ -198,7 +198,7 @@ create_report <- function(seq_tab,
       'Click on "→ data" to open a folder with BAM files,',
       'which can be inspected in a sequence viewer'
     ),
-    'n_seqs' = paste(
+    'n_reads' = paste(
       'Number of analyzed raw Nanopore reads'
     ),
     'target_cluster_frac' = paste(
@@ -365,12 +365,12 @@ create_report <- function(seq_tab,
     )
   }
   
-  haplo_format(row_i, match('top_n_seqs', cols))
+  haplo_format(row_i, match('top_n_reads', cols))
   ambig_format(row_i, match('top_seq_consensus_ambigs', cols))
   abund_format(row_i, length(fixed_cols) + 3*n_curate + n_clust + 1:n_clust)
   
   wb$add_conditional_formatting(
-    dims = wb_dims(rows=row_i, cols=match('n_seqs', cols)),
+    dims = wb_dims(rows=row_i, cols=match('n_reads', cols)),
     style = c('#fc8d59', '#ffffbf', '#99d594'),
     rule = c(low_abund_threshold, 200, 1000),
     type = 'colorScale'
@@ -433,7 +433,7 @@ create_report <- function(seq_tab,
   
   dcols <- c(
     'amplicon', 'indexes', 'data link'='link', 'name'='id', 'unique id'='unique_id',
-    'taxon group'='group', 'sequence', 'FASTA'='fasta',
+    'taxon group'='taxon_num', 'sequence', 'FASTA'='fasta',
     '# reads'='abundance', '# cons. diffs'='consensus_diffs',  '# ambig'='consensus_ambigs',
     'auto-lineage'='short_lineage', 'auto-taxon'='taxon', 'matching ranks',
     'contaminant'='is_contaminant', 'unspecific'
