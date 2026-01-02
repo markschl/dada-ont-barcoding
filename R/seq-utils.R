@@ -16,11 +16,12 @@ limit_sample <- function(x, limit) {
 }
 
 
-#' Get edit distance for best-matching strand
-match_both_orient <- function(seq1, seq2, cores = 1) {
+#' Get edit distance for best-matching strand (semiglobal alignment)
+match_both_orient <- function(seq1, seq2, cores = 1, free_end_gaps = TRUE) {
   both_orient <- list(seq1, rev_complement(seq1))
   diffs <- simplify2array(lapply(both_orient, function(s1) {
-    pairwise_align(s1, seq2, count_end_gaps=FALSE, cores = cores)[,'diffs']
+    aln <- pairwise_align(s1, seq2, cores = cores)
+    get_aln_stats(aln, free_end_gaps = free_end_gaps)[,'diffs']
   }), except=NA)
   orient <- apply(diffs, 1, which.min)
   setNames(apply(diffs, 1, min), orient)
@@ -39,28 +40,35 @@ read_dna <- function(seq_file) {
   Biostrings::readDNAStringSet(seq_file)
 }
 
-#' Does a pairwise alignment between pairs of sequences and reports
-#' the number of mismatches and pattern/subject gaps.
-#' Sets all these values to Inf if the overlap length relative to 'seq1' 
-#' is lower than 'min_overlap'
+#' Does a pairwise alignment between pairs of sequences
+#' (DECIPHER::AlignPairs with some default settings)
 pairwise_align <- function(seq1,
-                          seq2,
-                          count_end_gaps = TRUE,
-                          min_overlap = 0.5,
-                          cores = 1,
-                          simplify = TRUE) {
+                           seq2,
+                           type = 'values',
+                           cores = 1) {
   seq1 <- Biostrings::DNAStringSet(seq1)
   seq2 <- Biostrings::DNAStringSet(seq2)
-  aln <- DECIPHER::AlignPairs(
+  DECIPHER::AlignPairs(
     seq1, seq2,
+    type = type,
     # penalties chosen to avoid alignments with very short overlap
     # in case of totally non-matching sequences
     perfectMatch=4, misMatch=-4, gapOpening=-4, gapExtension=-1,
     # helps avoiding mis-alignments
     bandWidth=length(seq1[[1]]),
-    processors=cores, verbose=F
+    processors=cores, verbose=FALSE
   )
-  if (!count_end_gaps) {
+}
+
+#' Extracts the number of mismatches and pattern/subject gaps
+#' from a DECIPHER::AlignPairs result.
+#' Sets all values to Inf if the overlap length relative to 'seq1' 
+#' is lower than 'min_overlap'
+get_aln_stats <- function(aln,
+                          min_overlap = 0.5,
+                          free_end_gaps = FALSE,
+                          simplify = TRUE) {
+  if (free_end_gaps) {
     # filter end gaps
     # TODO: better way?
     aln$PatternGapLength = lapply(1:nrow(aln), function(i) {
@@ -72,7 +80,7 @@ pairwise_align <- function(seq1,
   }
   out <- lapply(1:nrow(aln), function(i) {
     a <- aln[i,]
-    seq1_coverage <- (a$Matches + a$Mismatches) / length(seq1[[i]])
+    seq1_coverage <- (a$Matches + a$Mismatches) / (a$PatternEnd - a$PatternStart + 1)
     out <- if (seq1_coverage >= min_overlap) {
       c(mismatches = a$Mismatches[1], 
         seq1_gaps = sum(a$PatternGapLength[[1]]),

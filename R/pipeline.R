@@ -24,16 +24,13 @@ read_xlsx_sample_tab <- function(meta_file, sheet_name) {
 }
 
 parse_sample_tab <- function(sample_tab) {
-  # normalize headers
-  names(sample_tab) <- gsub('[- ]+', '_', names(sample_tab))
-  
-  # check for invalid characters
-  new_sample <- gsub('\\s', '_', iconv(sample_tab$sample, 'utf-8', 'ascii'), perl=T)
-  sel <- !is.na(new_sample) & new_sample != sample_tab$sample
-  if (any(sel)) {
-    warning(paste0('The following samples had spaces or non-ASCII characters and were adjusted: ',
-                   paste(new_sample[sel], collapse=', ')))
-    sample_tab$sample = new_sample
+  # normalize & validate headers
+  names(sample_tab) <- gsub('[- ]+', '_', tolower(names(sample_tab)))
+  required_cols <- c('plate', 'well', 'amplicon', 'indexes', 'sample', 'sample_type')
+  missing_cols <- setdiff(required_cols, names(sample_tab))
+  if (length(missing_cols) > 0) {
+    stop('The sample metadata table is missing some columns: ',
+         paste(missing_cols, collapse=', '))
   }
   
   # remove barcodes without sample name
@@ -48,7 +45,7 @@ parse_sample_tab <- function(sample_tab) {
   if (length(dup_s[dup_s != '0']) > 0) {
     warning(paste0('The following samples are duplicated: ',
                    paste(dup_s, collapse=', '),
-                   '. We simply append the plate/coordinate to the name.'))
+                   '. The plate/coordinate was added to the name.'))
     sel <- sample_tab$unique_sample %in% dup_s
     sample_tab$unique_sample[sel] = with(sample_tab[sel, ], paste(unique_sample, plate, well, sep='_'))
   }
@@ -77,20 +74,27 @@ parse_sample_tab <- function(sample_tab) {
 
 read_xlsx_primer_tab <- function(meta_file, sheet_name, ...) {
   primer_tab <- openxlsx2::read_xlsx(meta_file, sheet_name, na.strings = c(''))
-  primer_tab$primer_name <- gsub('_.*', '', primer_tab$primer_barcode)
-  stopifnot(!duplicated(primer_tab$primer_barcode))
   parse_primer_tab(primer_tab, ...)
 }
 
 parse_primer_tab <- function(primer_tab, amplicons = NULL) {
+  # normalize & validate headers
+  names(primer_tab) <- gsub('[- ]+', '_', tolower(names(primer_tab)))
+  required_cols <- c('primer_index', 'index_seq', 'primer_seq')
+  missing_cols <- setdiff(required_cols, names(primer_tab))
+  if (length(missing_cols) > 0) {
+    stop('The primers table is missing some columns: ',
+         paste(missing_cols, collapse=', '))
+  }
+  primer_tab$primer_name <- gsub('_.*', '', primer_tab$primer_index)
+  stopifnot(!duplicated(primer_tab$primer_index))
   
+  # validate amplicons and primer names
+  primers <- split(primer_tab, primer_tab$primer_name)
   if (is.null(amplicons)) {
     stopifnot(length(primers) == 2)
-    amplicons <- unique(primers$primer_name)
+    amplicons <- unique(primer_tab$primer_name)
   }
-  
-  primers <- split(primer_tab, primer_tab$primer_name)
-  
   amp_primer_names <- strsplit(amplicons, '_', fixed=TRUE)
   names(amp_primer_names) <- amplicons
   
@@ -108,30 +112,29 @@ parse_primer_tab <- function(primer_tab, amplicons = NULL) {
   }
   
   # collect per-amplicon primer/index information
-  amplicon_primers <- lapply(amp_primer_names, function(p) {
+  lapply(amp_primer_names, function(p) {
     if (length(p) != 2) {
-      stop("The 'amplicon' column in 'sample_list' needs to be in the form 'forward_reverse' ",
+      stop("The 'amplicon' column in the samples list needs to be in the form 'forward_reverse' ",
            "where the forward/reverse primer name has to match the primer names in ",
-           "the 'primer_barcode' column of the 'primers' sheet.")
+           "the 'primer_index' column of the 'primers' sheet.")
     }
-    # TODO: direction not actually needed
     comb <- list(forward=primers[[p[1]]], reverse=primers[[p[2]]])
     lapply(comb, function(d) {
-      primer <- unique(d$primer)
-      if (length(unique(d$primer)) != 1) {
+      primer <- unique(d$primer_seq)
+      if (length(primer) != 1) {
         stop(sprintf("The primer '%s' does not have the same sequence in all rows of the 'primer' column",
                      d$primer_name[1]))
       }
-      stopifnot(!duplicated(d$barcode))
-      idx_len <- unique(nchar(d$barcode))
-      if (length(idx_len) != 1) {
+      stopifnot(!duplicated(d$index_seq))
+      index_len <- unique(nchar(d$index_seq))
+      if (length(index_len) != 1) {
         # TODO: in theory we could support this (just affects how we trim the sequences before the primer)
         stop(sprintf("The barcodes for primer '%s' should all have the same length", primer))
       }
       list(
         primer = setNames(primer, d$primer_name[1]),
-        barcode = setNames(d$barcode, d$primer_barcode),
-        barcode_len = idx_len
+        index = setNames(d$index_seq, d$primer_index),
+        index_len = index_len
       )
     })
   })
@@ -160,7 +163,7 @@ run_primer_search <- function(fq_paths,
       idx_paths <- paste0(seq_prefix, c('fwd', 'rev'), '_idx.fasta')
       for (i in 1:2) {
         write_dna(amp_pr[[i]]$primer, primer_paths[i])
-        write_dna(amp_pr[[i]]$barcode, idx_paths[i])
+        write_dna(amp_pr[[i]]$index, idx_paths[i])
       }
       search_opts <- c(
         '-p', primer_max_err,
@@ -255,7 +258,6 @@ run_demux <- function(primer_search_fq,
                       min_barcode_length = 50,
                       ...) {
   
-  names(sample_tab) <- tolower(names(sample_tab))
   stopifnot(c('amplicon', 'indexes', 'sample', 'sample_type', 'morpho_taxon', 'known_sequence') %in% names(sample_tab))
   
   list_demux_files <- function(demux_dir) {
@@ -300,7 +302,9 @@ run_demux <- function(primer_search_fq,
   p <- stringr::str_split_fixed(t$amplicon, '_', 2)
   i <- stringr::str_split_fixed(t$indexes, '-', 2)
   t$primer_indexes <- sprintf('%s_%s-%s_%s', p[,1], i[,1], p[,2], i[,2])
-  t$category <- ifelse(is.na(t$sample_type), 'sample with reads', as.character(t$`sample type`))
+  t$category <- ifelse(is.na(t$sample_type) | t$sample_type == '',
+                       'sample with reads',
+                       as.character(t$`sample type`))
   t$category[is.na(t$reads_path)] <- 'no reads'
   t$category[is.na(t$sample)] <- 'unused index combination'
   t
@@ -308,7 +312,7 @@ run_demux <- function(primer_search_fq,
 
 # run clustering
 cluster_fq <- function(fq, known_seq, aln_out, opts = NULL, tmp_dir = NULL) {
-  # cat(fq, '\n')
+  cat(fq, '\n')
   out_prefix <- get_aln_prefix(fq, aln_out)
   args <- modifyList(opts %||% list(), 
                     list(fq = fq, out_prefix = out_prefix,
@@ -360,9 +364,10 @@ run_clustering <- function(seq_tab,
                            cores = 1,
                            overwrite = FALSE) {
   # for parallel::clusterExport
-  cluster_export <- c('cluster_fq', 'opts', 'tmp_dir',
+  cluster_export <- c('cluster_fq', 'opts',
                      '.programs', 'dada_err', 'aln_out', 'get_aln_prefix',
-                     'seq_tab', get_barcodes_export)
+                     'seq_tab',
+                     get_barcodes_export)
   idx <- seq_len(nrow(seq_tab))
   stopifnot(!is.null(seq_tab$primer_indexes))
   stopifnot(!is.na(seq_tab$primer_indexes))
@@ -373,10 +378,12 @@ run_clustering <- function(seq_tab,
   if (length(sel_comb) > 0) {
     res <- run_or_load(cache_file, function() {
       parallel_lapply(idx[sel_comb], function(i) {
-        # i=which(seq_tab$primer_indexes=='...')
+        # i=which(seq_tab$primer_indexes=='ITS5_bc157-ITS4_bc120')
         fq <- seq_tab$reads_path[i]
         known_seq <- seq_tab$known_sequence[i]
-        cluster_fq(fq, known_seq, aln_out, opts = opts, tmp_dir = tmp_dir)
+        cluster_fq(fq, known_seq, aln_out, 
+                   opts = opts,
+                   tmp_dir = file.path(tmp_dir, seq_tab$primer_indexes[i]))
       }, cores=cores, export=cluster_export)
     }, rerun = overwrite)
     if (length(intersect(sel_comb, names(res))) != length(sel_comb)) {
@@ -390,7 +397,7 @@ run_clustering <- function(seq_tab,
 
 
 #' Propagate information from nested cluster tables to the main seq_tab
-propagate_data <- function(seq_tab, haplo_extra_cols=NULL) {
+propagate_data <- function(seq_tab, extra_seq_cols=NULL) {
   # Propagate sample-level attributes to seq_tab
   attr_cols <- c('n_reads', 'n_singletons', 'omega_a')
   for (a in attr_cols) {
@@ -401,7 +408,7 @@ propagate_data <- function(seq_tab, haplo_extra_cols=NULL) {
   
   # Propagate extra information from the top taxon to seq_tab
   summary_cols <- list(
-    list(c('abundance', 'max_identical', 'n0'), sum),
+    list(c('n_mapped', 'max_identical', 'n0'), sum),
     list(c('max_homopoly_len'), max)
   )
   for (sc in summary_cols) {
@@ -415,11 +422,12 @@ propagate_data <- function(seq_tab, haplo_extra_cols=NULL) {
     }
   }
   
-  haplo_cols <- c('consensus_diffs', 'consensus_ambigs',
-                 'sequence', 'consensus',
-                 'method',
-                 haplo_extra_cols)
-  for (col in haplo_cols) {
+  seq_cols <- c('sequence', 'consensus',
+                'consensus_diffs', 'consensus_ambigs',
+                'homopolymer_adjustments',
+                'method',
+                 extra_seq_cols)
+  for (col in seq_cols) {
     seq_tab[[paste0('top_seq_', col)]] = sapply(seq_tab$clustering, function(d) {
       d[[col]][1] %||% NA
     })
@@ -429,7 +437,7 @@ propagate_data <- function(seq_tab, haplo_extra_cols=NULL) {
   seq_tab$top_n_reads = sapply(seq_tab$clustering, function(d) {
     if (is.null(d)) 0 else sum(d$taxon_num == d$taxon_num[1] & !d$is_rare)
   })
-  seq_tab$target_cluster_frac = with(seq_tab, top_abundance / n_reads)
+  seq_tab$target_cluster_frac = with(seq_tab, top_n_mapped / n_reads)
   
   seq_tab
 }
@@ -536,7 +544,7 @@ run_taxonomy_assignment <- function(seq_tab,
     unique_id <- unique_map[d$consensus]
     stopifnot(!is.na(unique_id))
     lineages <- auto_lineages[unique_id, , drop = F]
-    # assign to contaminant if any member of a taxon has a known contaminant genus
+    # assign to contaminant if any member of a taxon has a known contaminant name
     d$is_contaminant = FALSE
     for (rank in setdiff(names(known_contaminants), colnames(lineages))) {
       taxa <- known_contaminants[[rank]]
@@ -578,8 +586,8 @@ run_taxonomy_assignment <- function(seq_tab,
       d <- seq_tab$clustering[[i]]
       taxon <- seq_tab$morpho_taxon[i]
       # sort by taxon and abundance (in case it has been reordered above)
-      max_abund <- ave(d$abundance, d$taxon_num, FUN = max)
-      d <- d[order(-max_abund, d$taxon_num, -d$abundance), ]
+      max_abund <- ave(d$n_mapped, d$taxon_num, FUN = max)
+      d <- d[order(-max_abund, d$taxon_num, -d$n_mapped), ]
       # calculate taxa overlap (proportion of matching names in the lineage)
       morpho_lineage <- morpho_lineages_gbif[taxon, ]
       unique_id <- unique_map[d$consensus]
@@ -633,8 +641,8 @@ run_taxonomy_assignment <- function(seq_tab,
     # cat(i, ' ')
     d <- seq_tab$clustering[[i]]
     # also sort by taxon and abundance (in case it has been reordered above)
-    taxon_abund <- ave(ifelse(d$is_rare, 0, d$abundance), d$taxon_num, FUN=sum)
-    d <- d[order(d$is_contaminant, -taxon_abund, d$taxon_num, -d$abundance), ]
+    taxon_abund <- ave(ifelse(d$is_rare, 0, d$n_mapped), d$taxon_num, FUN=sum)
+    d <- d[order(d$is_contaminant, -taxon_abund, d$taxon_num, -d$n_mapped), ]
 
     # add 'unspecific'
     d$unspecific = d$taxon_num != d$taxon_num[1] | d$is_rare
@@ -642,7 +650,7 @@ run_taxonomy_assignment <- function(seq_tab,
     # check group1 over-abundance
     grp <- unique(d$taxon_num)
     if (length(grp) > 1) {
-      grp_abund <- ave(d$abundance, d$taxon_num, FUN=sum)
+      grp_abund <- ave(d$n_mapped, d$taxon_num, FUN=sum)
       is_grp1 <- d$taxon_num == grp[1]
       abund_ratio <- grp_abund[is_grp1][1] / grp_abund
       if (abund_ratio[d$taxon_num == grp[2]][1] < 3) {
@@ -674,7 +682,7 @@ run_taxonomy_assignment <- function(seq_tab,
 propagate_tax_data <- function(seq_tab) {
   propagate_data(
     seq_tab,
-    haplo_extra_cols <- c(
+    extra_seq_cols = c(
       'matching_ranks',
       'mismatching_ranks',
       'taxon',

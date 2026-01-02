@@ -21,7 +21,7 @@ create_report <- function(seq_tab,
       if (nrow(d.flt) > 4) {
         out <- c(out, 'many-variants')
       }
-      contam <- d$abundance[1] != max(d$abundance)
+      contam <- d$n_mapped[1] != max(d$n_mapped)
       if (contam) {
         out <- c(out, 'contamination')
       }
@@ -34,10 +34,11 @@ create_report <- function(seq_tab,
           out <- c(out, 'known-seq-diffs')
         }
       }
-      if (!is.na(d.flt$consensus_diffs[1]) && d.flt$consensus_diffs[1] > 0) {
-        out <- c(out, 'consensus-diffs')
-      } else if (all(!is.na(d.flt$consensus_diffs)) && any(d.flt$consensus_diffs > 0)) {
+      if (any(!is.na(d.flt$sequence) & !is.na(d.flt$consensus_diffs) & d.flt$consensus_diffs > 0)) {
         out <- c(out, '[consensus-diffs]')
+      }
+      if (any(!is.na(d.flt$homopolymer_adjustments) & d.flt$homopolymer_adjustments > 0)) {
+        out <- c(out, '[homopolymer-fix]')
       }
       if (d.flt$consensus_ambigs[1] > 0) {
         out <- c(out, 'ambig-consensus')
@@ -45,7 +46,7 @@ create_report <- function(seq_tab,
         out <- c(out, '[ambig-consensus]')
       }
       # TODO: -> ?
-      if (d.flt$abundance[1] < low_abund_threshold) {
+      if (d.flt$n_mapped[1] < low_abund_threshold) {
         out <- c(out, 'low-coverage')
       } 
       if (!is.null(d.flt$mismatching_ranks)) {
@@ -89,7 +90,7 @@ create_report <- function(seq_tab,
     'unexpected taxon',
     NA
   )
-  # top_abundance < low_abund_threshold ~ 'low coverage',
+  # top_n_mapped < low_abund_threshold ~ 'low coverage',
   # top_consensus_diffs > 0 | !is.na(known_seq_diffs) & known_seq_diffs > 0 & !contaminated ~ 'uncertain sequence',
   # top_consensus_ambigs > 0 ~ 'seq. variation',
   seq_tab_def$link = '→ data'
@@ -121,7 +122,7 @@ create_report <- function(seq_tab,
   # read coverage
   
   abund.m = t(simplify2array(lapply(seq_tab_def$clustering, function(d) {
-    abund <- if (is.null(d) || nrow(d) == 0) NA else d$abundance[!d$unspecific]
+    abund <- if (is.null(d) || nrow(d) == 0) NA else d$n_mapped[!d$unspecific]
     abund[1:n_clust]
   }), except=NA))
   colnames(abund.m) = paste0('cov_seq', 1:n_clust)
@@ -434,7 +435,7 @@ create_report <- function(seq_tab,
   dcols <- c(
     'amplicon', 'indexes', 'data link'='link', 'name'='id', 'unique id'='unique_id',
     'taxon group'='taxon_num', 'sequence', 'FASTA'='fasta',
-    '# reads'='abundance', '# cons. diffs'='consensus_diffs',  '# ambig'='consensus_ambigs',
+    '# reads'='n_mapped', '# cons. diffs'='consensus_diffs',  '# ambig'='consensus_ambigs',
     'auto-lineage'='short_lineage', 'auto-taxon'='taxon', 'matching ranks',
     'contaminant'='is_contaminant', 'unspecific'
   )
@@ -518,7 +519,7 @@ create_report <- function(seq_tab,
   
   ambig_format(drow_i, match('consensus_ambigs', dcols))
   ambig_format(drow_i, match('consensus_diffs', dcols))
-  abund_format(drow_i, match('abundance', dcols))
+  abund_format(drow_i, match('n_mapped', dcols))
   
   colrng <- match(c('taxon', 'matching ranks'), dcols)
   tax_format(drow_i, colrng[2], colrng)

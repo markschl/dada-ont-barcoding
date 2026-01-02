@@ -170,11 +170,11 @@ The primers are defined in the *primers* sheet of the *meta.xlsx* input file. He
 # (we don't use map_dfr to avoid the purrr dependency)
 idxdist = bind_rows(lapply(amplicon_primers, function(amp_pr) {
   bind_rows(lapply(amp_pr, function(d) {
-    dst = adist(d$barcode)
+    dst = adist(d$index)
     tibble(
       primer = names(d$primer),
       seq = d$primer,
-      `index length` = d$barcode_len,
+      `index length` = d$index_len,
       dist = dst[lower.tri(dst, F)]
     )
   }), .id='direction')
@@ -417,6 +417,7 @@ ggplot(d.ee, aes(group, count, fill=category)) +
 
 ```{r filter-demultiplex}
 # Do error filtering and distribute by barcode
+demux_dir <- file.path(analysis_dir, 'tmp', 'demux')
 demux_out <- file.path(demux_dir, 'by_sample')
 primer_search_fq <- file.path(trim_dir, amplicons, 'trimmed.fastq.zst')
 args <- list(
@@ -476,12 +477,12 @@ seq_tab <- run_clustering(
 
 ```{r cluster-validation, fig.width=6.7, fig.height=4.5, message=FALSE, warning=FALSE, fig.cap='(ref:cluster-validation)'}
 method_cols = c(dada='#1f78b4', dada_split='#561fb4',
-                cluster_fixed='#7fb128', 'unspecific'='#ff7f00')
+                cluster_fixed='#7fb128', 'other/unused indexes'='#ff7f00')
 
 d <- seq_tab %>% 
-  filter(!is.na(seq_tab$top_abundance)) %>% 
+  filter(!is.na(seq_tab$top_n_mapped)) %>% 
   mutate(
-    method = factor(ifelse(category == 'sample with reads', top_seq_method, 'unspecific'),
+    method = factor(ifelse(grepl('sample', category), top_seq_method, 'other/unused indexes'),
                     names(method_cols))
   )
 
@@ -524,7 +525,7 @@ psingle = ggplot(d, aes(n_reads, singleton_frac,
   labs(x='Read depth in sample',
        y='Proportion of singletons')
 
-pident = ggplot(d, aes(top_abundance, top_max_identical,
+pident = ggplot(d, aes(top_n_mapped, top_max_identical,
                        color=method)) +
   method_points +
   scale_y_log10() +
@@ -534,7 +535,7 @@ pident = ggplot(d, aes(top_abundance, top_max_identical,
   labs(x='sequences for top organism',
        y='identical seqs.')
 
-pn0 = ggplot(d, aes(top_abundance, top_n0,
+pn0 = ggplot(d, aes(top_n_mapped, top_n0,
                     color=method)) +
   method_points +
   scale_y_log10() +
