@@ -784,11 +784,6 @@ if (any(sel)) {
 
 In case of re-sequencing a specimen, there is the additional possibility of validating the result by calculating the number of differences (mismatches/gaps). Inconsistent barcode sequences might be investigated further. It is still possible, that e.g. the provided Sanger sequences have errors as well, it is best to also investigate the chromatograms in case of inconsistencies.
 
-```{r compare-known-seqs}
-# TODO: cache?
-seq_tab <- compare_known_seqs(seq_tab, aln_out)
-```
-
 (ref:known-seq-diffs) Mismatches to already known sequences (in case of re-sequencing). The vertical red line indicates a critical sequencing depth threshold of `r low_abund_threshold` reads.
 
 ```{r known-seq-diffs, fig.width=5, fig.height=2.3, fig.cap='(ref:known-seq-diffs)'}

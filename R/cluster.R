@@ -36,7 +36,8 @@ get_barcodes_export <- c(
 #' barcode sequence.
 #'
 #' @param fq demultiplexed FASTQ file
-#' @param out_prefix Output prefix for cluster FASTA and aligned BAM files
+#' @param out_prefix Output prefix for consensus FASTA and BAM alignment files
+#' @param id_prefix Name prefix for sequence IDs in the consensus FASTA and BAM alignment files
 #' @param tmp_dir Optional path to a temporary directory. If not provided,
 #'    temporary data is placed in the output directory and deleted after everything
 #'    is finished. 
@@ -109,6 +110,7 @@ get_barcodes_export <- c(
 #'
 #' @value Returns a data frame with at least the following fields:
 #'    - `id`: Descriptive sequence ID, e.g.: 'taxon1_seq2'
+#'    - `full_id`: The ID used in the BAM and FASTA output files: `id` prefixed with `id_prefix`
 #'    - `taxon_num`: Nth (putative) taxon (integer; see also `taxa_cluster_threshold`)
 #'    - `sequence`: DADA2 ASV or most abundant unique split sequence
 #'       (`NA` in case of fixed-threshold clustering)
@@ -129,6 +131,7 @@ get_barcodes_export <- c(
 #'       one of 'dada', 'dada_split' (if haplotype splitting was done), 'fixed_cluster'
 get_barcodes <- function(fq,
                          out_prefix,
+                         id_prefix = NULL,
                          tmp_dir = NULL,
                          dada_omega_a = c(1e-20, 1e-10, 1e-2),
                          omegaA_iter_threshold = 1000,
@@ -151,7 +154,7 @@ get_barcodes <- function(fq,
                          minimap2 = 'minimap2',
                          samtools = 'samtools',
                          verbose = FALSE) {
-  sample_name <- gsub('\\.fastq(\\.gz)?$', '', basename(fq))
+  # verbose = TRUE
   if (is.null(tmp_dir)) {
     tmp_dir <- paste0(out_prefix, '_tmp')
   }
@@ -306,7 +309,7 @@ get_barcodes <- function(fq,
           sprintf(
             '%s\n    seq: %d | clust: %s | map: %s | n0: %s; ident: %s | diff: %s | ambig: %s | homop-adj: %s\n',
             if (dada_attempt == 1) {
-              sprintf('%s (N = %d) | %s', sample_name, dada_detail$n_reads, d$method[1])
+              sprintf('%s (N = %d) | %s', basename(out_prefix), dada_detail$n_reads, d$method[1])
             } else {
               paste("... omegaA =", dada_omega_a[dada_attempt])
             },
@@ -452,14 +455,29 @@ get_barcodes <- function(fq,
     d$id[sel],
     ave(d$id[sel], d$taxon_num[sel], FUN=seq_along)
   )
+  id_prefix <- if (is.null(id_prefix)) {
+    ''
+  } else {
+    stopifnot(!grepl(' ', id_prefix))
+    paste0(id_prefix, '_')
+  }
+  d$full_id <- paste0(id_prefix, d$id)
+  commented_id <- sprintf(
+    '%s reads: %d | ambigs: %d | identical: %d | subst-free (n0): %d | %s',
+    d$full_id,
+    d$n_mapped,
+    d$consensus_ambigs,
+    d$max_identical,
+    d$n0 %||% NA,
+    d$message
+  )
   rename_bam_refs(remap_prefix, out_prefix,
-                  id_map = setNames(d$id, orig_id),
+                  id_map = setNames(commented_id, orig_id),
                   ref_seq = setNames(d$consensus, orig_id),
                   do_index = TRUE,
                   samtools = samtools)
 
   # clean up
-  unlink(tmp_dir, TRUE)
   d$seq_indices = d$top_uniques = NULL
   
   # calculate homopolymer stretch length
@@ -472,40 +490,76 @@ get_barcodes <- function(fq,
 }
 
 
-#' Create a multiple alignment of the haplotypes from the top taxon
-#' in a data frame produced by 'get_barcodes', which may further have been reordered to
-#' prioritize another species in the mix if the top taxon was a contaminant.
-align_top <- function(d,
-                     out_prefix,
-                     known_seq = NA,
-                     cores = 1) {
-  cl <- d$taxon_num[1]
-  seqs <- do.call(c, lapply(which(d$taxon_num == cl & !d$is_rare), function(i) {
-    d.sel <- d[i,]
-    out <- if (!is.na(d.sel$sequence) && d.sel$sequence != d.sel$consensus) {
-      setNames(c(d.sel$sequence, d.sel$consensus),
-               paste0(d.sel$id, c('_dominant_seq', '_consensus')))
-    } else {
-      setNames(d.sel$consensus, d.sel$id)
-    }
-    names(out) <- paste(
-      names(out), 
-      sprintf('reads: %d | ambigs: %d | identical: %d | subst-free (n0): %d | %s',
-              d.sel$n_mapped, d.sel$consensus_ambigs, d.sel$max_identical, d.sel$n0,
-              d.sel$message)
+#' Map already known sequences or inconsistent ASV sequences against the consensus
+#' (also useful for manual inspection)
+#' 
+#' Adds a `consensus_diffs` column to `d` (NA if not compared, Inf if not mapped
+#' due to too many mismatches)
+compare_seqs <- function(d,
+                         bam_out,
+                         tmp_prefix = NULL,
+                         known_seq = NULL,
+                         minimap2 = 'minimap2',
+                         samtools = 'samtools') {
+  if (is.null(tmp_prefix)) {
+    tmp_prefix <- paste0(bam_out, '_map_tmp')
+  }
+  known_seq <- known_seq %||% NA
+  stopifnot(length(known_seq) == 1)
+  d$known_seq_diffs <- NA_integer_
+  sel <- !is.na(d$sequence) & !d$is_rare & d$sequence != d$consensus
+  map_seqs <- c()
+  if (any(sel)) {
+    map_seqs <- c(
+      map_seqs,
+      setNames(d$sequence[sel], paste0(d$full_id[sel], '_dominant_seq'))
     )
-    out
-  }))
-  if (!is.null(known_seq) && !is.na(known_seq)) {
-    seqs <- c(seqs, setNames(known_seq, 'known_sequence'))
   }
-  # aln_seqs = seqs = Biostrings::DNAStringSet(seqs)
-  if (length(seqs) > 1) {
-    seqs <- Biostrings::DNAStringSet(seqs)
-    aln_seqs <- DECIPHER::AlignSeqs(seqs, verbose = FALSE, processors = cores)
-    Biostrings::writeXStringSet(aln_seqs, paste0(out_prefix, sprintf('_cluster%d_comparison.fasta', cl)))
+  if (!is.na(known_seq)) {
+    sel <- rep(TRUE, nrow(d))
+    map_seqs <- c(map_seqs, setNames(known_seq, 'known_sequence'))
   }
+  do_cmp <- attr(d, 'has_seq_comparison') <- length(map_seqs) > 0
+  if (do_cmp) {
+    stopifnot(any(sel))
+    seq_file <- paste0(tmp_prefix, '_cmp_seq.fasta')
+    ref_file <- paste0(tmp_prefix, '_cmp_ref.fasta')
+    write_dna(map_seqs, seq_file)
+    write_dna(setNames(d$consensus[sel], d$full_id[sel]), ref_file)
+    cmd <- c(
+      'scripts/map_ref_simple.sh',
+      seq_file,
+      ref_file,
+      bam_out,
+      1,
+      minimap2,
+      samtools
+    )
+    sam <- run_bash(cmd, stdout = TRUE)
+    sam <- if (length(sam) > 0) {
+      sam <- read.delim(textConnection(sam), header = FALSE, colClasses = 'character')
+      sam[sam[[1]] == 'known_sequence',]
+    } else {
+      data.frame()
+    }
+    if (nrow(sam) == 0) {
+      if (!is.na(known_seq)) {
+        # nothing mapped -> must be large number
+        d$known_seq_diffs[1] <- Inf
+      }
+    } else {
+      stopifnot(nrow(sam) == 1)
+      dist_col <- which(grepl('NM:i:', unlist(sam), fixed=TRUE))[1]
+      stopifnot(!is.na(dist_col))
+      mapped_i <- gsub(' .*', '', d$full_id) == sam[[3]]
+      stopifnot(sum(mapped_i) == 1)
+      d$known_seq_diffs[mapped_i] <- as.integer(gsub('NM:i:', '', sam[[dist_col]]))
+    }
+    invisible(file.remove(seq_file, ref_file))
+  }
+  d
 }
+
 
 dada_learn_errors <- function(fq_paths, omega_a = 1e-20, cores = 1, ...) {
   # To be sure we increase the NW alignment band size,
@@ -779,10 +833,34 @@ split_haplotypes <- function(reads,
 subset_combine_bam <- function(out_prefix,
                                sel_list,
                                cores = 1,
+                               chunk_size = 400,
                                fast = FALSE,
                                write_refs = TRUE,
                                do_index = TRUE,
                                samtools = 'samtools') {
+  # recursively merge large lists if necessary
+  if (length(sel_list) > chunk_size) {
+    n <- max(ceiling(length(sel_list) / chunk_size), chunk_size)
+    sub_chunks <- split(sel_list, ceiling(1:length(sel_list) / n))
+    chunk_prefixes <- paste0(out_prefix, '_tmp_', seq_along(sub_chunks))
+    for (i in seq_along(sub_chunks)) {
+      subset_combine_bam(
+        chunk_prefixes[i],
+        sub_chunks[[i]],
+        cores = cores,
+        chunk_size = chunk_size,
+        fast = fast,
+        write_refs = write_refs,
+        do_index = FALSE,
+        samtools = samtools
+      )
+    }
+    for (prefix in chunk_prefixes) {
+      remove_bam(prefix)
+    }
+    return()
+  }
+  
   # merge BAM
   bam_out <- paste0(out_prefix, '.bam')
   msg <- run_bash(
@@ -790,24 +868,28 @@ subset_combine_bam <- function(out_prefix,
       samtools,
       'merge',
       '--no-PG',
-      '-f',
-      if (fast) '-1' else NULL,
+      '-f', if (fast) '-1' else NULL,
       '-@', cores,
       '-o', bam_out,
       sapply(sel_list, function(x) {
-        sprintf(
-          '<(samtools view --no-PG -uT %s %s %s)',
-          paste0(x[[1]], '.fasta'),
-          paste0(x[[1]], '.bam'),
-          paste(x[[2]], collapse = ' ')
-        )
+        if (length(x) == 2) {
+          sprintf(
+            '<(samtools view --no-PG -u %s %s)',
+            # paste0(x[[1]], '.fasta'),
+            paste0(x[[1]], '.bam'),
+            paste(x[[2]], collapse = ' ')
+          )
+        } else {
+          stopifnot(length(x) == 1)
+          paste0(x[[1]], '.bam')
+        }
       })
     ),
     stderr = TRUE,
     stdout = TRUE
   )
   stopifnot(!grepl('invalid region or unknown reference', msg))
-  if (length(msg) > 0 && grepl('coordinate sort to be lost', msg, fixed = TRUE)) {
+  if (length(msg) > 0 && any(grepl('coordinate sort to be lost', msg, fixed = TRUE))) {
     # resort if multiple were merged (can sometimes happen)
     # https://github.com/samtools/samtools/issues/2159
     # TODO: not entirely clear why
@@ -818,8 +900,7 @@ subset_combine_bam <- function(out_prefix,
         samtools,
         'sort',
         '--no-PG',
-        '-l',
-        if (fast) 1 else 6,
+        '-l', if (fast) 1 else 6,
         '-@', cores,
         '-o', bam_out,
         merged_f
@@ -833,13 +914,17 @@ subset_combine_bam <- function(out_prefix,
     file.remove(paste0(x[[1]], '.fasta.fai'))
   }
   if (do_index) {
-    run_bash(c('samtools', 'index', bam_out))
+    run_bash(c(samtools, 'index', bam_out))
   }
   # merge references
   if (write_refs) {
     ref_out <- paste0(out_prefix, '.fasta')
     refs <- do.call(c, lapply(sel_list, function(x) {
-      Biostrings::readDNAStringSet(paste0(x[[1]], '.fasta'))[as.character(x[[2]])]
+      r <- Biostrings::readDNAStringSet(paste0(x[[1]], '.fasta'))
+      if (length(x) == 2) {
+        r <- r[match(x[[2]], gsub(' .*', '', names(r)))]
+      }
+      r
     }))
     Biostrings::writeXStringSet(refs, ref_out)
   }
@@ -857,7 +942,7 @@ rename_bam_refs <- function(prefix,
                             samtools='samtools') {
   stopifnot(!is.null(names(id_map)))
   stopifnot(!is.na(names(id_map)))
-  id_trans <- setNames(paste0('@SQ\tSN:', id_map, '\t'),
+  id_trans <- setNames(paste0('@SQ\tSN:', gsub(' .*', '', id_map), '\t'),
                        paste0('@SQ\tSN:', names(id_map), '\t'))
   bam <- paste0(prefix, '.bam')
   bam_out <- paste0(out_prefix, '.bam')
@@ -883,7 +968,7 @@ rename_bam_refs <- function(prefix,
                                 paste0(out_prefix, '.fasta'))
   }
   if (do_index) {
-    invisible(run_bash(c('samtools', 'index', bam_out)))
+    invisible(run_bash(c(samtools, 'index', bam_out)))
   }
 }
 

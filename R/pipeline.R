@@ -281,8 +281,9 @@ run_demux <- function(primer_search_fq,
   
   # initialize the sequence table
   sample_tab$i_ <- seq_len(nrow(sample_tab))
+  trimmed_fq <- sort(trimmed_fq)
   t <- data.frame(
-    reads_path = sort(trimmed_fq),
+    reads_path = trimmed_fq,
     primer_indexes = gsub('\\.fastq.gz$', '', basename(trimmed_fq)),
     i_ = nrow(sample_tab) + seq_len(length(trimmed_fq))
   )
@@ -302,35 +303,15 @@ run_demux <- function(primer_search_fq,
   p <- stringr::str_split_fixed(t$amplicon, '_', 2)
   i <- stringr::str_split_fixed(t$indexes, '-', 2)
   t$primer_indexes <- sprintf('%s_%s-%s_%s', p[,1], i[,1], p[,2], i[,2])
+  if (length(unique(na.omit(t$amplicon))) > 0) {
+    t$indexes <- t$primer_indexes
+  }
   t$category <- ifelse(is.na(t$sample_type) | t$sample_type == '',
                        'sample with reads',
                        as.character(t$`sample type`))
   t$category[is.na(t$reads_path)] <- 'no reads'
   t$category[is.na(t$sample)] <- 'unused index combination'
   t
-}
-
-# run clustering
-cluster_fq <- function(fq, known_seq, aln_out, opts = NULL, tmp_dir = NULL) {
-  cat(fq, '\n')
-  out_prefix <- get_aln_prefix(fq, aln_out)
-  args <- modifyList(opts %||% list(), 
-                    list(fq = fq, out_prefix = out_prefix,
-                         tmp_dir = tmp_dir,
-                         minimap2 = .programs$minimap2,
-                         samtools = .programs$samtools))
-  d <- do.call(get_barcodes, args)
-  if (!is.null(d)) {
-    align_top(d, out_prefix, known_seq = known_seq)
-  }
-  d
-}
-
-get_aln_prefix <- function(fq, aln_out) {
-  out_name <- gsub('\\.[^\\.]+', '', basename(fq))
-  out_dir <- file.path(aln_out, out_name)
-  dir.create(out_dir, FALSE, TRUE)
-  file.path(out_dir, out_name)
 }
 
 run_learn_errors <- function(seq_tab, 
@@ -364,26 +345,49 @@ run_clustering <- function(seq_tab,
                            cores = 1,
                            overwrite = FALSE) {
   # for parallel::clusterExport
-  cluster_export <- c('cluster_fq', 'opts',
-                     '.programs', 'dada_err', 'aln_out', 'get_aln_prefix',
+  cluster_export <- c('opts', '.programs', 'dada_err', 'aln_out',
+                     'compare_seqs', 'write_dna',
                      'seq_tab',
                      get_barcodes_export)
   idx <- seq_len(nrow(seq_tab))
-  stopifnot(!is.null(seq_tab$primer_indexes))
-  stopifnot(!is.na(seq_tab$primer_indexes))
+  stopifnot(!is.null(seq_tab$indexes))
+  stopifnot(!is.na(seq_tab$indexes))
   seq_tab$clustering = vector(mode='list', nrow(seq_tab))
-  names(seq_tab$clustering) <- seq_tab$primer_indexes
-  names(idx) <- seq_tab$primer_indexes
-  sel_comb <- seq_tab$primer_indexes[!is.na(seq_tab$reads_path)]
+  names(seq_tab$clustering) <- seq_tab$indexes
+  names(idx) <- seq_tab$indexes
+  sel_comb <- seq_tab$indexes[!is.na(seq_tab$reads_path)]
   if (length(sel_comb) > 0) {
     res <- run_or_load(cache_file, function() {
       parallel_lapply(idx[sel_comb], function(i) {
-        # i=which(seq_tab$primer_indexes=='ITS5_bc157-ITS4_bc120')
+        # i=which(seq_tab$indexes=='ITS5_bc362-ITS4_bc247')
         fq <- seq_tab$reads_path[i]
         known_seq <- seq_tab$known_sequence[i]
-        cluster_fq(fq, known_seq, aln_out, 
-                   opts = opts,
-                   tmp_dir = file.path(tmp_dir, seq_tab$primer_indexes[i]))
+        # cat(fq, '\n')
+        idx <- seq_tab$indexes[i]
+        out_prefix <- file.path(aln_out, idx, idx)
+        tmp_out <- if (!is.null(tmp_dir)) {
+          file.path(tmp_dir, paste0(idx, '_tmp'))
+        } else {
+          paste0(out_prefix, '_tmp')
+        }
+        args <- modifyList(opts %||% list(),
+                           list(fq = fq,
+                                out_prefix = out_prefix,
+                                id_prefix = idx,
+                                tmp_dir = tmp_out,
+                                minimap2 = .programs$minimap2,
+                                samtools = .programs$samtools))
+        d <- do.call(get_barcodes, args)
+        if (!is.null(d)) {
+          d <- compare_seqs(d,
+                            paste0(out_prefix, '_seq_comparison.bam'),
+                            tmp_prefix = file.path(tmp_out, '_cmp'),
+                            known_seq = known_seq,
+                            minimap2 = .programs$minimap2,
+                            samtools = .programs$samtools)
+        }
+        unlink(tmp_out, TRUE)
+        d
       }, cores=cores, export=cluster_export)
     }, rerun = overwrite)
     if (length(intersect(sel_comb, names(res))) != length(sel_comb)) {
@@ -395,11 +399,45 @@ run_clustering <- function(seq_tab,
   seq_tab
 }
 
+combine_clusters_bam <- function(seq_tab, aln_dir, out_prefix,
+                                 top_only = FALSE) {
+  # combine mapped reads
+  idx_path <- file.path(aln_dir, seq_tab$indexes, seq_tab$indexes)
+  sel_i <- which(!is.na(seq_tab$omega_a))
+  sel_list <- if (top_only) {
+    lapply(sel_i, function(j) {
+      d <- seq_tab$clustering[[j]]
+      sel <- d$taxon_num == d$taxon_num[1] & !d$is_rare
+      if (d$taxon_num[1] != 1) {
+        # list was reordered, which suggests contamination:
+        # also include top taxon
+        max_abund <- ave(d$n_mapped, d$taxon_num, FUN = max)
+        sel <- sel | max_abund == max(max_abund) & !d$is_rare
+      }
+      list(idx_path[j], d$full_id[sel])
+    })
+  } else {
+    idx_path[sel_i]
+  }
+  subset_combine_bam(
+    out_prefix,
+    sel_list,
+    samtools = .programs$samtools
+  )
+  # combine sequence comparisons
+  sel <- !is.na(seq_tab$has_seq_comparison) & seq_tab$has_seq_comparison
+  subset_combine_bam(
+    paste0(out_prefix, '_seq_comparison'),
+    paste0(idx_path, '_seq_comparison')[sel],
+    write_refs = FALSE,
+    samtools = .programs$samtools
+  )
+}
 
 #' Propagate information from nested cluster tables to the main seq_tab
 propagate_data <- function(seq_tab, extra_seq_cols=NULL) {
   # Propagate sample-level attributes to seq_tab
-  attr_cols <- c('n_reads', 'n_singletons', 'omega_a')
+  attr_cols <- c('n_reads', 'n_singletons', 'omega_a', 'has_seq_comparison')
   for (a in attr_cols) {
     seq_tab[[a]] = sapply(seq_tab$clustering, function(cl) attr(cl, a) %||% NA)
   }
@@ -425,6 +463,7 @@ propagate_data <- function(seq_tab, extra_seq_cols=NULL) {
   seq_cols <- c('sequence', 'consensus',
                 'consensus_diffs', 'consensus_ambigs',
                 'homopolymer_adjustments',
+                'known_seq_diffs',
                 'method',
                  extra_seq_cols)
   for (col in seq_cols) {
@@ -692,53 +731,6 @@ propagate_tax_data <- function(seq_tab) {
   )  
 }
 
-compare_known_seqs <- function(seq_tab, aln_out, cores = 1) {
-  if (!('known sequence' %in% names(seq_tab))) {
-    seq_tab$known_sequence = NA
-  }
-  
-  has_known_seqs <- seq_tab$n_reads > 0 & !is.na(seq_tab$known_sequence)
-  if (any(has_known_seqs)) {
-    seq_tab$clustering[has_known_seqs] = pbapply::pblapply(which(has_known_seqs), function(i) {
-      d <- seq_tab$clustering[[i]]
-      d$known_seq_diffs <- diffs <- match_both_orient(
-        d$consensus,
-        rep(seq_tab$known_sequence[i], nrow(d)),
-        cores=cores
-      )
-      d$known_seq_dir <- as.integer(names(diffs))
-      d
-    })
-  }
-  
-  seq_tab$known_seq_diffs = sapply(seq_len(nrow(seq_tab)), function(i) {
-    d <- seq_tab$clustering[[i]]
-    if (!is.null(d)) {
-      sel <- !d$is_contaminant & !d$is_rare
-      sd <- d$known_seq_diffs[sel]
-      if (length(sd) > 0) {
-        best_i <- which.min(sd)
-        # set correct orientation if necessary
-        if (d$known_seq_dir[best_i] == 2) {
-          seq_tab$known_sequence[i] <- rev_complement(seq_tab$known_sequence[i])
-        }
-        if (d$taxon_num[sel][best_i] == d$taxon_num[1]) {
-          if (sd[best_i] > 0) {
-            out_prefix <- get_aln_prefix(seq_tab$reads_path[i], aln_out)
-            align_top(d, out_prefix, known_seq = seq_tab$known_sequence[i])
-          }
-        } else {
-          is_g1 <- d$taxon_num == d$taxon_num[1]
-          d$message[is_g1] <- paste(d$message[is_g1], 'Known seq. matches other taxon in mix;')
-        }
-        return(sd[best_i])
-      }
-    }
-    NA
-  })
-  
-  seq_tab
-}
 
 #' Check installed programs
 get_programs <- function(bin_dir='bin') {

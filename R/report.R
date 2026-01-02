@@ -25,10 +25,11 @@ create_report <- function(seq_tab,
       if (contam) {
         out <- c(out, 'contamination')
       }
-      if (!is.null(d.flt$known_seq_diffs) && all(!is.na(d.flt$known_seq_diffs)) &&
-          any(d.flt$known_seq_diffs > 0)) {
+      if (!is.null(d.flt$known_seq_diffs) && 
+          any(!is.na(d.flt$known_seq_diffs) & d.flt$known_seq_diffs > 0)) {
         # TODO: threshold?
-        if (contam && any(d$known_seq_diffs[d$is_contaminant] < 2)) {
+        sd <- d.flt$known_seq_diffs
+        if (contam && any(!is.na(sd[d.flt$is_contaminant]) & sd[d.flt$is_contaminant] < 2)) {
           out <- c(out, 'known-seq-contamination')
         } else {
           out <- c(out, 'known-seq-diffs')
@@ -90,9 +91,6 @@ create_report <- function(seq_tab,
     'unexpected taxon',
     NA
   )
-  # top_n_mapped < low_abund_threshold ~ 'low coverage',
-  # top_consensus_diffs > 0 | !is.na(known_seq_diffs) & known_seq_diffs > 0 & !contaminated ~ 'uncertain sequence',
-  # top_consensus_ambigs > 0 ~ 'seq. variation',
   seq_tab_def$link = '→ data'
 
   fixed_cols <- c(
@@ -101,7 +99,7 @@ create_report <- function(seq_tab,
     'issues', '# seqs'='top_n_reads', '# ambig'='top_seq_consensus_ambigs',
     '# seqs'='n_reads', '% assigned'='target_cluster_frac',
     'morpho_taxon', 'auto-lineage'='top_seq_short_lineage', 'auto-taxon'='top_seq_taxon', 'matching ranks',
-    'seq'='known_sequence', 'diffs'='known_seq_diffs',
+    'seq'='known_sequence', 'diffs'='top_seq_known_seq_diffs',
     'comment'='final_comment'
   )
   
@@ -178,7 +176,7 @@ create_report <- function(seq_tab,
   headers <- list(
     Overview = list(rng=c('issues', 'target_cluster_frac'), bg='#e5f5e0'),
     Taxonomy = list(rng=c('morpho_taxon', 'matching ranks'), bg='#deebf7'),
-    `Known sequences` = list(rng=c('known_sequence', 'known_seq_diffs'), bg='#fee0d2'),
+    `Known sequences` = list(rng=c('known_sequence', 'top_seq_known_seq_diffs'), bg='#fee0d2'),
     `Curation` = list(rng = c('final_comment', paste0('FA', n_curate)), bg='#ffedd5'),
     `Uniques` = list(rng = c('unq1', paste0('unq', n_curate)), bg='#efedf5'),
     `[Flags]` = list(rng=length(fixed_cols) + 3*n_curate + c(1, n_clust)),
