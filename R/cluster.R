@@ -206,15 +206,16 @@ get_barcodes <- function(fq,
       # For each cluster, get the most abundant unique read (and its count),
       # used as reference for read mapping + consensus.
       # If only singletons, we have to use the first-occurring sequence.
-      reads.split <- split(as.character(reads), cl)
-      top_uniq <- lapply(reads.split, function(r) sort(table(r), TRUE)[1])
+      reads_split <- split(as.character(reads), cl)
+      top_uniq <- lapply(reads_split, function(r) sort(table(r), TRUE)[1])
       ref_seq <- sapply(top_uniq, names)
+      stopifnot(names(reads_split) == names(ref_seq))
       d <- data.frame(
         row.names = names(ref_seq),
         id = as.integer(names(ref_seq)),
         sequence = ref_seq,
-        abundance = sapply(reads.split, length)[names(ref_seq)],
-        max_identical = max(unlist(top_uniq)),
+        abundance = sapply(reads_split, length),
+        max_identical = sapply(top_uniq, max),
         method = 'cluster_fixed',
         check.names = FALSE
       )
