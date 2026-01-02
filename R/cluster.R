@@ -82,6 +82,9 @@ get_barcodes_export <- c(
 #' @param homopoly_fix_min_ident Minimum number of identical sequences required to
 #'    attempt adjusting ambiguous homopolymer sequences in the consensus.
 #'    The homopolymer run length of the most frequent sequence is chosen.
+#' @param min_homopoly_len Minimum length a homopolymer region needs to have in order
+#'    to attempt "fixing" an ambiguous consensus in that region
+#'    (see also `homopoly_fix_min_ident`)
 #' @param fixed_cluster_threshold Similarity threshold for grouping sequence variants
 #'    per taxon. Single-linkage clustering is applied, with the default threshold of
 #'    0.97, the maximum divergence between any two sequences can be 3%.
@@ -125,35 +128,35 @@ get_barcodes_export <- c(
 #'    - `method`: method from which the haplotype emerged:
 #'       one of 'dada', 'dada_split' (if haplotype splitting was done), 'fixed_cluster'
 get_barcodes <- function(fq,
-                        out_prefix,
-                        tmp_dir = NULL,
-                        dada_omega_a = c(1e-20, 1e-10, 1e-2),
-                        omegaA_iter_threshold = 1000,
-                        dada_min_identical = 2,
-                        dada_min_n0 = 4,
-                        min_seq_abund = 3,
-                        max_sample_depth = 5000,
-                        consensus_max_depth = 3000,
-                        consensus_threshold = 0.65,
-                        consensus_by_qual = TRUE,
-                        homopoly_fix_min_ident = dada_min_identical,
-                        fixed_cluster_threshold = 0.97,
-                        taxa_cluster_threshold = fixed_cluster_threshold,
-                        cluster_single_linkage = TRUE,
-                        min_variant_freq = 0.2,
-                        split_min_identical = dada_min_identical,
-                        max_split_ratio = 3,
-                        cores = 1,
-                        minimap2 = 'minimap2',
-                        samtools = 'samtools',
-                        verbose = FALSE) {
-  
+                         out_prefix,
+                         tmp_dir = NULL,
+                         dada_omega_a = c(1e-20, 1e-10, 1e-2),
+                         omegaA_iter_threshold = 1000,
+                         dada_min_identical = 2,
+                         dada_min_n0 = 4,
+                         min_seq_abund = 3,
+                         max_sample_depth = 5000,
+                         consensus_max_depth = 3000,
+                         consensus_threshold = 0.65,
+                         consensus_by_qual = TRUE,
+                         homopoly_fix_min_ident = dada_min_identical,
+                         min_homopoly_len = 6,
+                         fixed_cluster_threshold = 0.97,
+                         taxa_cluster_threshold = fixed_cluster_threshold,
+                         cluster_single_linkage = TRUE,
+                         min_variant_freq = 0.2,
+                         split_min_identical = dada_min_identical,
+                         max_split_ratio = 3,
+                         cores = 1,
+                         minimap2 = 'minimap2',
+                         samtools = 'samtools',
+                         verbose = FALSE) {
   sample_name <- gsub('\\.fastq(\\.gz)?$', '', basename(fq))
   if (is.null(tmp_dir)) {
     tmp_dir <- paste0(out_prefix, '_tmp')
   }
   dir.create(tmp_dir, FALSE, TRUE)
-
+  
   # We will need the reads with quality scores below
   # cat('read/derep '); tictoc::tic()
   reads <- Biostrings::readQualityScaledDNAStringSet(fq, nrec = max_sample_depth)
@@ -243,6 +246,7 @@ get_barcodes <- function(fq,
         consensus_threshold = consensus_threshold,
         consensus_by_qual = consensus_by_qual,
         homopoly_fix = d$max_identical >= dada_min_identical,
+        min_homopoly_len = min_homopoly_len,
         fast = TRUE,
         cores = cores,
         minimap2 = minimap2,
@@ -269,6 +273,7 @@ get_barcodes <- function(fq,
           max_ratio = max_split_ratio,
           consensus_threshold = consensus_threshold,
           consensus_by_qual = consensus_by_qual,
+          min_homopoly_len = min_homopoly_len,
           fast = TRUE,
           cores = cores,
           minimap2 = minimap2,
@@ -397,6 +402,7 @@ get_barcodes <- function(fq,
         consensus_threshold = consensus_threshold,
         consensus_by_qual = consensus_by_qual,
         homopoly_fix = d.sel$max_identical[remap_cons] >= dada_min_identical,
+        min_homopoly_len = min_homopoly_len,
         fast = !all(remap_cons),
         cores = cores,
         minimap2 = minimap2,
@@ -887,6 +893,7 @@ ambig_consensus <- function(seqs,
                            consensus_by_qual = TRUE,
                            fast = FALSE,
                            homopoly_fix = FALSE,
+                           min_homopoly_len = 6,
                            cores = 1,
                            minimap2 = 'minimap2',
                            samtools = 'samtools') {
@@ -947,11 +954,10 @@ ambig_consensus <- function(seqs,
       aln <- pairwise_align(out$consensus[homopoly_fix], 
                             ref_seq[homopoly_fix], 
                             type = 'sequence')
-      res <- fix_homopolymers(aln)
+      res <- fix_homopolymers(aln, min_homopoly_len = min_homopoly_len)
       cons_ <- out$consensus
       out[homopoly_fix, c('consensus', 'homopolymer_adjustments')] <- res[, c('consensus', 'n_adjusted')]
       adjusted <- out$homopolymer_adjustments > 0
-      cat('adj', sum(adjusted), '\n')
       different <- ref_seq != out$consensus
       stopifnot(out$consensus[homopoly_fix & !adjusted] == cons_[homopoly_fix & !adjusted])
       out$consensus_diffs[adjusted & !different] <- 0
