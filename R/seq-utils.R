@@ -16,21 +16,6 @@ limit_sample <- function(x, limit) {
 }
 
 
-#' Get edit distance for best-matching strand (semiglobal alignment)
-match_both_orient <- function(seq1, seq2, cores = 1, free_end_gaps = TRUE) {
-  both_orient <- list(seq1, rev_complement(seq1))
-  diffs <- simplify2array(lapply(both_orient, function(s1) {
-    aln <- pairwise_align(s1, seq2, cores = cores)
-    get_aln_stats(aln, free_end_gaps = free_end_gaps)[,'diffs']
-  }), except=NA)
-  orient <- apply(diffs, 1, which.min)
-  setNames(apply(diffs, 1, min), orient)
-}
-
-rev_complement <- function(seq) {
-  as.character(Biostrings::reverseComplement(Biostrings::DNAStringSet(seq)))  
-}
-
 write_dna <- function(seqs, seq_file) {
   stopifnot(!is.null(names(seqs)))
   Biostrings::writeXStringSet(Biostrings::DNAStringSet(seqs), seq_file)
@@ -102,6 +87,6 @@ get_aln_stats <- function(aln,
 
 make_fasta <- function(seqs, nm=names(seqs)) {
   stopifnot(!is.null(nm))
-  sprintf('>%s\n%s\n', nm, seqs)
+  stopifnot(!is.na(nm))
+  paste(sprintf('>%s\n%s\n', nm, seqs), collapse='')
 }
-

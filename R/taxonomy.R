@@ -1,7 +1,7 @@
 
 install_taxonomy_deps <- function() {
   p <- installed.packages()[,c('Package')]
-  p <- setdiff(c('rbgif', 'stringr'), p)
+  p <- setdiff(c('rgbif', 'stringr'), p)
   if (length(p) > 0) {
     install.packages(p)
   }
@@ -16,9 +16,16 @@ install_taxonomy_deps <- function() {
                   'genus',
                   'species')
 
+
+load_taxdb <- function(db_url, db_type, db_file, db_tax_url=NULL, ...) {
+  stopifnot(db_type %in% c('unite', 'qiime_fasta', 'qiime_qza'))
+  load_fn <- get(paste0('load_', db_type))
+  load_fn(db_url, db_file, tax_urls=db_tax_url)
+}
+
 load_unite <- function(url, outfile, ...) {
   stopifnot(length(url) == 1)  # multiple files not implemented
-  download.file(url, 'unite.tar.gz', timeout = 600, quiet = TRUE)
+  download.file(url, 'unite.tar.gz', timeout = 1200, quiet = TRUE)
   untar('unite.tar.gz', exdir = 'unite')
   fasta <- list.files('unite', pattern = '.fasta')
   fasta <- fasta[grepl('dynamic', fasta)][1]
@@ -146,17 +153,13 @@ write_taxdb <- function(seqs, outfile) {
   Biostrings::writeXStringSet(utax_seqs, compress = endsWith(outfile, '.gz'))  
 }
 
-assign_taxonomy <- function(seqs,
+assign_taxonomy_sintax <- function(seq_file,
                             utax_db,
-                            threshold = 0.8,
+                            confidence_threshold = 0.8,
+                            tmp_prefix = NULL,
                             threads = 1,
-                            verbose = FALSE,
-                            vsearch = 'vsearch',
-                            ...) {
-  seq_file <- '_sintax.seqs.fasta' # TODO: where to place temp. file?
-  stopifnot(!is.null(names(seqs)))
-  Biostrings::writeXStringSet(Biostrings::DNAStringSet(seqs), seq_file)
-  cat(make_fasta(seqs), sep = '', file = seq_file)
+                            vsearch = 'vsearch') {
+  # print(make_fasta(seqs))
   out <- run_bash(
     c(
       vsearch,
@@ -164,8 +167,8 @@ assign_taxonomy <- function(seqs,
       '-db', utax_db,
       '-tabbedout', '-',
       '-strand', 'both',
-      '-sintax_cutoff', threshold,
-      if (verbose) NULL else '-quiet',
+      '-sintax_cutoff', confidence_threshold,
+      '-quiet',
       '-threads', threads
     ),
     stdout = TRUE
@@ -175,8 +178,7 @@ assign_taxonomy <- function(seqs,
     header = FALSE,
     col.names = c('id', 'details', 'strand', 'lineage')
   )
-  file.remove(seq_file)
-  lineages <- parse_utax_lineages(tax$lineage, ...)
+  lineages <- parse_utax_lineages(tax$lineage)
   rownames(lineages) = tax$id
   lineages
 }
@@ -188,6 +190,10 @@ parse_utax_lineages <- function(lineages) {
     setNames(s[,2], s[,1])
   })
   rank_codes <- unique(unlist(lapply(lineages, names)))
+  if (length(rank_codes) == 1 && is.na(rank_codes)) {
+    # all-NA -> return just kingdom = NA
+    rank_codes <- 'k'
+  }
   o <- do.call(rbind, lapply(lineages, function(l) match(rank_codes, names(l))))
   rank_codes <- rank_codes[order(colMeans(o))]
   valid_codes <- substr(.valid_ranks, 1, 1)
@@ -202,6 +208,22 @@ parse_utax_lineages <- function(lineages) {
   }
   lineages[lineages == ''] = NA
   lineages
+}
+
+make_taxon_name <- function(lineages) {
+  for (rank in c('genus', 'species')) {
+    if (!(rank %in% colnames(lineages))) {
+      lineages <- cbind(lineages, NA)
+      colnames(lineages)[ncol(lineages)] <- rank
+    }
+  }
+  highest_taxon <- apply(lineages, 1, function(l) tail(na.omit(l), 1)[1])
+  taxname <- ifelse(is.na(highest_taxon), 'Unknown', paste('Unknown', highest_taxon))
+  has_spec <- !is.na(lineages[, 'species'])
+  gen_only <- !is.na(lineages[, 'genus']) & !has_spec
+  taxname[has_spec] <- lineages[has_spec, 'species']
+  taxname[gen_only] <- paste(lineages[gen_only & !has_spec, 'genus'], 'sp.')
+  taxname
 }
 
 rank_level <- function(tax) {

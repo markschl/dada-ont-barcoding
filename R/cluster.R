@@ -11,7 +11,7 @@ install_cluster_deps <- function() {
 
 
 # for parallel::clusterExport
-get_barcodes_export <- c(
+.get_barcodes_export <- c(
   'get_barcodes',
   'dada2_denoise',
   'split_haplotypes',
@@ -23,7 +23,6 @@ get_barcodes_export <- c(
   'get_aln_stats',
   'subset_combine_bam',
   'rename_bam_refs',
-  'align_top',
   'fix_homopolymers',
   'move_bam',
   'remove_bam',
@@ -36,11 +35,11 @@ get_barcodes_export <- c(
 #' barcode sequence.
 #'
 #' @param fq demultiplexed FASTQ file
-#' @param out_prefix Output prefix for consensus FASTA and BAM alignment files
+#' @param dada_err output from `dada2::learnErrors()`
+#' @param alignment_prefix Optional output prefix for BAM alignment files and
+#'    FASTA references for manual inspection and/or downstream analyses
 #' @param id_prefix Name prefix for sequence IDs in the consensus FASTA and BAM alignment files
-#' @param tmp_dir Optional path to a temporary directory. If not provided,
-#'    temporary data is placed in the output directory and deleted after everything
-#'    is finished. 
+#' @param tmp_dir Optional path to a temporary directory (default is `tempdir()`)
 #' @param dada_omega_a OMEGA_A parameter value(s) to use for the denoising
 #'     (see ?dada2::setDadaOpt):
 #'    Can be a vector of increasing values (the default), which are tried
@@ -130,7 +129,8 @@ get_barcodes_export <- c(
 #'    - `method`: method from which the haplotype emerged:
 #'       one of 'dada', 'dada_split' (if haplotype splitting was done), 'fixed_cluster'
 get_barcodes <- function(fq,
-                         out_prefix,
+                         dada_err,
+                         alignment_prefix,
                          id_prefix = NULL,
                          tmp_dir = NULL,
                          dada_omega_a = c(1e-20, 1e-10, 1e-2),
@@ -155,10 +155,8 @@ get_barcodes <- function(fq,
                          samtools = 'samtools',
                          verbose = FALSE) {
   # verbose = TRUE
-  if (is.null(tmp_dir)) {
-    tmp_dir <- paste0(out_prefix, '_tmp')
-  }
-  dir.create(tmp_dir, FALSE, TRUE)
+  tmp <- tempfile('cluster_ont_', tmpdir = tmp_dir %||% tempdir())
+  dir.create(tmp, FALSE, TRUE)
   
   # We will need the reads with quality scores below
   # cat('read/derep '); tictoc::tic()
@@ -166,7 +164,7 @@ get_barcodes <- function(fq,
   if (length(reads) == max_sample_depth) {
     # DADA2 derepFastq does not offer a way to only read the top N reads,
     # so we need to prepare a new FASTQ file for this
-    fq <- file.path(tmp_dir, '_fq_limited.fastq')
+    fq <- file.path(tmp, '_fq_limited.fastq')
     Biostrings::writeQualityScaledXStringSet(reads, fq)
   }
   
@@ -176,13 +174,14 @@ get_barcodes <- function(fq,
   
   d.prev = NULL
   for (dada_attempt in seq_along(dada_omega_a)) {
-    round_prefix <- file.path(tmp_dir, paste0('round_', dada_attempt))
+    round_prefix <- file.path(tmp, paste0('round_', dada_attempt))
     # Run DADA2 denoising
     # note: denoising is done in every case even if the dada_min_identical threshold
     # is not met; DADA2 is anyway very fast with low-coverage samples
     # cat('dada '); tictoc::tic()
     d <- dada2_denoise(
       dada_derep,
+      dada_err,
       max_members = consensus_max_depth,
       OMEGA_A = dada_omega_a[dada_attempt]
     )
@@ -309,7 +308,7 @@ get_barcodes <- function(fq,
           sprintf(
             '%s\n    seq: %d | clust: %s | map: %s | n0: %s; ident: %s | diff: %s | ambig: %s | homop-adj: %s\n',
             if (dada_attempt == 1) {
-              sprintf('%s (N = %d) | %s', basename(out_prefix), dada_detail$n_reads, d$method[1])
+              sprintf('%s (N = %d) | %s', basename(fq), dada_detail$n_reads, d$method[1])
             } else {
               paste("... omegaA =", dada_omega_a[dada_attempt])
             },
@@ -356,7 +355,7 @@ get_barcodes <- function(fq,
   } # end of loop
   
   if (nrow(d) == 0) {
-    unlink(tmp_dir, TRUE)
+    unlink(tmp, TRUE)
     return(NULL)
   }
   
@@ -370,12 +369,12 @@ get_barcodes <- function(fq,
   # - select clusters/haplotypes >= min_seq_abund (!d$is_rare)
   # - remap reads to consensus if it differs from the reference sequence
   #   (as it is the consensus that we will report)
-  round_prefix <- file.path(tmp_dir, paste0('round_', dada_attempt))
+  round_prefix <- file.path(tmp, paste0('round_', dada_attempt))
   d.sel <- d[!d$is_rare,]
   # We have to re-map to the consensus if there are ambiguous bases or
   # any differences to the dominant ASV/unique split haplotype
   remap_cons <- d.sel$consensus_diffs > 0 | d.sel$consensus_ambigs > 0
-  remap_prefix <- file.path(tmp_dir, 'remap_cons')
+  remap_prefix <- file.path(tmp, 'remap_cons')
   # cat('assemble output '); tictoc::tic()
   if (all(!remap_cons)) {
     # nothing to remap -> just rename files or samtools view
@@ -446,7 +445,6 @@ get_barcodes <- function(fq,
   # tictoc::toc()
   
   # Finally: assign intuitively understandable names to sequences
-  # and also rename them in BAM headers
   orig_id <- d$id
   d$id <- paste0('taxon', d$taxon_num)
   sel <- ave(d$id, d$taxon_num, FUN=length) > 1
@@ -462,23 +460,28 @@ get_barcodes <- function(fq,
     paste0(id_prefix, '_')
   }
   d$full_id <- paste0(id_prefix, d$id)
-  commented_id <- sprintf(
-    '%s reads: %d | ambigs: %d | identical: %d | subst-free (n0): %d | %s',
-    d$full_id,
-    d$n_mapped,
-    d$consensus_ambigs,
-    d$max_identical,
-    d$n0 %||% NA,
-    d$message
-  )
-  rename_bam_refs(remap_prefix, out_prefix,
-                  id_map = setNames(commented_id, orig_id),
-                  ref_seq = setNames(d$consensus, orig_id),
-                  do_index = TRUE,
-                  samtools = samtools)
+  
+  # Create BAM/FASTA output files (with IDs renamed in headers)
+  if (!is.null(alignment_prefix)) {
+    commented_id <- sprintf(
+      '%s reads: %d | ambigs: %d | identical: %d | subst-free (n0): %d | %s',
+      d$full_id,
+      d$n_mapped,
+      d$consensus_ambigs,
+      d$max_identical,
+      d$n0 %||% NA,
+      d$message
+    )
+    rename_bam_refs(remap_prefix, alignment_prefix,
+                    id_map = setNames(commented_id, orig_id),
+                    ref_seq = setNames(d$consensus, orig_id),
+                    do_index = TRUE,
+                    samtools = samtools)
+  }
 
   # clean up
   d$seq_indices = d$top_uniques = NULL
+  unlink(tmp, TRUE)
   
   # calculate homopolymer stretch length
   l <- rle(utf8ToInt(d$consensus[1]))$lengths
@@ -496,14 +499,11 @@ get_barcodes <- function(fq,
 #' Adds a `consensus_diffs` column to `d` (NA if not compared, Inf if not mapped
 #' due to too many mismatches)
 compare_seqs <- function(d,
-                         bam_out,
-                         tmp_prefix = NULL,
+                         bam_out = NULL,
+                         tmp_dir = NULL,
                          known_seq = NULL,
                          minimap2 = 'minimap2',
                          samtools = 'samtools') {
-  if (is.null(tmp_prefix)) {
-    tmp_prefix <- paste0(bam_out, '_map_tmp')
-  }
   known_seq <- known_seq %||% NA
   stopifnot(length(known_seq) == 1)
   d$known_seq_diffs <- NA_integer_
@@ -522,8 +522,9 @@ compare_seqs <- function(d,
   do_cmp <- attr(d, 'has_seq_comparison') <- length(map_seqs) > 0
   if (do_cmp) {
     stopifnot(any(sel))
-    seq_file <- paste0(tmp_prefix, '_cmp_seq.fasta')
-    ref_file <- paste0(tmp_prefix, '_cmp_ref.fasta')
+    tmp_dir <- tmp_dir %||% tempdir()
+    seq_file <- tempfile('cmp_seq', tmp_dir, fileext = '.fasta')
+    ref_file <- tempfile('cmp_ref', tmp_dir, fileext = '.fasta')
     write_dna(map_seqs, seq_file)
     write_dna(setNames(d$consensus[sel], d$full_id[sel]), ref_file)
     cmd <- c(
@@ -586,10 +587,11 @@ dada_learn_errors <- function(fq_paths, omega_a = 1e-20, cores = 1, ...) {
 #' is turned on (see ?dada2::setDadaOpt). This increases sensitivity with InDel-rich
 #' Nanopore data.
 dada2_denoise <- function(x,
-                         cores = 1,
-                         max_members = 1e6,
-                         singleton_threshold = 5,
-                         ...) {
+                          dada_err,
+                          cores = 1,
+                          max_members = 1e6,
+                          singleton_threshold = 5,
+                          ...) {
   # DADA2 denoise
   derep <- if (inherits(x, 'character')) {
     dada2::derepFastq(x, qualityType = 'FastqQuality')
@@ -875,7 +877,6 @@ subset_combine_bam <- function(out_prefix,
         if (length(x) == 2) {
           sprintf(
             '<(samtools view --no-PG -u %s %s)',
-            # paste0(x[[1]], '.fasta'),
             paste0(x[[1]], '.bam'),
             paste(x[[2]], collapse = ' ')
           )
@@ -885,7 +886,6 @@ subset_combine_bam <- function(out_prefix,
         }
       })
     ),
-    stderr = TRUE,
     stdout = TRUE
   )
   stopifnot(!grepl('invalid region or unknown reference', msg))
@@ -908,10 +908,6 @@ subset_combine_bam <- function(out_prefix,
       stderr = FALSE
     )
     file.remove(merged_f)
-  }
-  # clean up .fai files
-  for (x in sel_list) {
-    file.remove(paste0(x[[1]], '.fasta.fai'))
   }
   if (do_index) {
     run_bash(c(samtools, 'index', bam_out))

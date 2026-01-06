@@ -17,15 +17,17 @@ read_xlsx_sample_tab <- function(meta_file, sheet_name) {
     sheet_name,
     na.strings = c('#N/A', '')
   )
-  sample_tab <- as_tibble(sample_tab, .name_repair='unique_quiet') %>% 
-    # empty cells might still have '0' (if a formula), we set these to NA
-    mutate(sample = ifelse(!is.na(sample) & sample == '0', NA, sample))
+  # sample_tab <- tibble::as_tibble(sample_tab, .name_repair='unique_quiet')
+  # empty cells might still have '0' (if a formula), we set these to NA
+  sample_tab$sample = ifelse(!is.na(sample_tab$sample) & sample_tab$sample == '0',
+                             NA,
+                             sample_tab$sample)
   parse_sample_tab(sample_tab)
 }
 
 parse_sample_tab <- function(sample_tab) {
   # normalize & validate headers
-  names(sample_tab) <- gsub('[- ]+', '_', tolower(names(sample_tab)))
+  names(sample_tab) <- gsub('[- .]+', '_', tolower(names(sample_tab)))
   required_cols <- c('plate', 'well', 'amplicon', 'indexes', 'sample', 'sample_type')
   missing_cols <- setdiff(required_cols, names(sample_tab))
   if (length(missing_cols) > 0) {
@@ -39,8 +41,8 @@ parse_sample_tab <- function(sample_tab) {
   # Check for duplicates
   
   sample_tab$unique_sample = sample_tab$sample
-  sample_tab <- sample_tab %>% 
-    relocate(unique_sample, .after='sample')
+  # sample_tab <- sample_tab %>% 
+  #   relocate(unique_sample, .after='sample')
   dup_s <- unique(sample_tab$unique_sample[duplicated(sample_tab$unique_sample)])
   if (length(dup_s[dup_s != '0']) > 0) {
     warning(paste0('The following samples are duplicated: ',
@@ -79,7 +81,7 @@ read_xlsx_primer_tab <- function(meta_file, sheet_name, ...) {
 
 parse_primer_tab <- function(primer_tab, amplicons = NULL) {
   # normalize & validate headers
-  names(primer_tab) <- gsub('[- ]+', '_', tolower(names(primer_tab)))
+  names(primer_tab) <- gsub('[- .]+', '_', tolower(names(primer_tab)))
   required_cols <- c('primer_index', 'index_seq', 'primer_seq')
   missing_cols <- setdiff(required_cols, names(primer_tab))
   if (length(missing_cols) > 0) {
@@ -140,20 +142,53 @@ parse_primer_tab <- function(primer_tab, amplicons = NULL) {
   })
 }
 
+
+
+
+do_trim_demux <- function(fq_paths,
+                          amplicon_primers,
+                          sample_tab,
+                          out_dir,
+                          primer_max_err = 0.2,
+                          idx_max_diffs = 0,
+                          min_barcode_length = 50,
+                          error_threshold = 2.5,
+                          cores = 1,
+                          keep_trimmed = FALSE) {
+  trim_dir <- file.path(out_dir, '_trim')
+  trim <- run_primer_search(
+    fq_paths,
+    amplicon_primers,
+    trim_dir,
+    primer_max_err = primer_max_err,
+    idx_max_diffs = idx_max_diffs,
+    min_barcode_length = min_barcode_length,
+    cores = cores
+  )
+  n <- trim$stats$counts
+  if (sum(n$count[n$valid]) == 0) {
+    stop('No reads with primer/sample index found!')
+  }
+  seq_tab <- run_demux(trim$trimmed_fq, out_dir, sample_tab, error_threshold = error_threshold)
+  if (!keep_trimmed) {
+    unlink(trim_dir, TRUE)
+  }
+  list(seq_tab = seq_tab, trim_stats = trim$stats)
+}
+
 run_primer_search <- function(fq_paths,
                               amplicon_primers,
-                              search_dir,
-                              primer_max_err = 2.5,
+                              out_dir,
+                              primer_max_err = 0.2,
                               idx_max_diffs = 0,
                               min_barcode_length = 50,
-                              overwrite = FALSE,
-                              ...) {
+                              cores = 1) {
   amplicons <- names(amplicon_primers)
   for (amplicon in amplicons) {
-    amp_search_dir <- file.path(search_dir, amplicon)
+    amp_search_dir <- file.path(out_dir, amplicon)
     demux_fq <- file.path(amp_search_dir, 'trimmed.fastq.zst')
     
-    if (overwrite || !file.exists(demux_fq) && length(fq_paths) > 0) {
+    if (length(fq_paths) > 0) {
       cat(amplicon, sep='\n', file=stderr())
       unlink(amp_search_dir)  # clean up old files
       dir.create(amp_search_dir, FALSE, TRUE)
@@ -188,7 +223,7 @@ run_primer_search <- function(fq_paths,
   
   # primer start position
   pos <- do.call(rbind, lapply(amplicons, function(amplicon) {
-    d <- read.delim(file.path(search_dir, amplicon, 'primer_pos.tsv'),
+    d <- read.delim(file.path(out_dir, amplicon, 'primer_pos.tsv'),
                   colClasses=c('character', 'integer', 'integer'))
     d$amplicon <- amplicon
     d$dir <- factor(d$dir, c('fwd', 'rev'), c('forward', 'reverse'))
@@ -198,7 +233,7 @@ run_primer_search <- function(fq_paths,
   # amplicon length
   category_trans <- c(trimmed='regular', concatenated='concatenated products')
   l <- do.call(rbind, lapply(names(amplicon_primers), function(amplicon) {
-    d <- read.delim(file.path(search_dir, amplicon, 'length_stats.tsv'),
+    d <- read.delim(file.path(out_dir, amplicon, 'length_stats.tsv'),
                     colClasses=c('character', 'integer', 'integer'))
     d$amplicon <- amplicon
     d
@@ -209,7 +244,7 @@ run_primer_search <- function(fq_paths,
 
   # primer/index counts
   n <- do.call(rbind, lapply(seq_along(amplicons), function(i) {
-    d <- read.delim(file.path(search_dir, amplicons[i], 'trim_counts.tsv'),
+    d <- read.delim(file.path(out_dir, amplicons[i], 'trim_counts.tsv'),
                colClasses=c('character', 'integer'))
     d$file <- trimws(gsub('\\.fastq\\.zst$', '', d$file))
     d$valid <- d$file == 'trimmed'
@@ -231,7 +266,7 @@ run_primer_search <- function(fq_paths,
 
   # quality
   q <- do.call(rbind, lapply(seq_along(amplicons), function(i) {
-    d <- read.delim(file.path(search_dir, amplicons[i], 'qual_stats.tsv'),
+    d <- read.delim(file.path(out_dir, amplicons[i], 'qual_stats.tsv'),
                colClasses=c('character', rep('integer', 7)),
                na.strings = 'undefined')
     d$amplicon <- amplicons[i]
@@ -245,40 +280,32 @@ run_primer_search <- function(fq_paths,
     d
   }))
 
-  list(position = pos, amplicon_len = l, counts = n, quality = q)
+  list(
+    trimmed_fq = file.path(out_dir, amplicons, 'trimmed.fastq.zst'),
+    stats = list(
+      position = pos, amplicon_len = l, counts = n, quality = q
+    )
+  )
 }
 
 
 run_demux <- function(primer_search_fq, 
-                      outdir, 
+                      out_dir, 
                       sample_tab,
-                      overwrite_threshold = 0.1,
-                      force_rerun = FALSE,
                       error_threshold = 2.5, 
-                      min_barcode_length = 50,
-                      ...) {
+                      min_barcode_length = 50) {
   
   stopifnot(c('amplicon', 'indexes', 'sample', 'sample_type', 'morpho_taxon', 'known_sequence') %in% names(sample_tab))
-  
-  list_demux_files <- function(demux_dir) {
-    file.path(demux_dir, list.files(demux_dir, pattern='.fastq.gz$'))  
-  }
-  
-  trimmed_fq <- list_demux_files(outdir)
-  
-  # run if <10% of sample files found
-  # (cannot assume 100% as some index combinations may have no reads)
-  if (force_rerun || length(trimmed_fq) < overwrite_threshold * nrow(sample_tab)) {
-    run_bash(c('scripts/filter-split.sh',
-               error_threshold,
-               # **note**: currently, we have only one threshold both in 'find-primers' and 'demux'
-               min_barcode_length,
-               outdir,
-               .programs$seqtool,
-               primer_search_fq))
-    trimmed_fq <- list_demux_files(outdir)
-  }
-  
+
+  run_bash(c('scripts/filter-split.sh',
+             error_threshold,
+             # **note**: currently, we have only one threshold both in 'find-primers' and 'demux'
+             min_barcode_length,
+             out_dir,
+             .programs$seqtool,
+             primer_search_fq))
+  trimmed_fq <- file.path(out_dir, list.files(out_dir, pattern='.fastq.gz$'))  
+
   # initialize the sequence table
   sample_tab$i_ <- seq_len(nrow(sample_tab))
   trimmed_fq <- sort(trimmed_fq)
@@ -339,16 +366,14 @@ get_amplicon_opts <- function(opts, amplicons) {
 run_clustering <- function(seq_tab,
                            dada_err,
                            cache_file,
-                           aln_out, 
-                           opts = NULL,
+                           aln_out,
                            tmp_dir = NULL,
-                           cores = 1,
-                           overwrite = FALSE) {
+                           parallel_lapply_fn = NULL,
+                           ...,
+                           cores = 1) {
   # for parallel::clusterExport
-  cluster_export <- c('opts', '.programs', 'dada_err', 'aln_out',
-                     'compare_seqs', 'write_dna',
-                     'seq_tab',
-                     get_barcodes_export)
+  cluster_export <- c('.programs', 'compare_seqs', 'write_dna',
+                     .get_barcodes_export)
   idx <- seq_len(nrow(seq_tab))
   stopifnot(!is.null(seq_tab$indexes))
   stopifnot(!is.na(seq_tab$indexes))
@@ -357,43 +382,48 @@ run_clustering <- function(seq_tab,
   names(idx) <- seq_tab$indexes
   sel_comb <- seq_tab$indexes[!is.na(seq_tab$reads_path)]
   if (length(sel_comb) > 0) {
-    res <- run_or_load(cache_file, function() {
-      parallel_lapply(idx[sel_comb], function(i) {
-        # i=which(seq_tab$indexes=='ITS5_bc362-ITS4_bc247')
+    idx <- idx[sel_comb]
+    batch_size <- max(1, min(12, ceiling(length(idx)/cores/10)))
+    idx_batches <- split(idx, ceiling(1:length(idx)/batch_size))
+    process_fn <- function(indexes) {
+      lapply(indexes, function(i) {
+        # i=which(seq_tab$indexes=='ITS5_bc485-ITS4_bc082')
         fq <- seq_tab$reads_path[i]
         known_seq <- seq_tab$known_sequence[i]
-        # cat(fq, '\n')
+        cat(fq, '\n')
         idx <- seq_tab$indexes[i]
-        out_prefix <- file.path(aln_out, idx, idx)
-        tmp_out <- if (!is.null(tmp_dir)) {
-          file.path(tmp_dir, paste0(idx, '_tmp'))
-        } else {
-          paste0(out_prefix, '_tmp')
-        }
-        args <- modifyList(opts %||% list(),
-                           list(fq = fq,
-                                out_prefix = out_prefix,
-                                id_prefix = idx,
-                                tmp_dir = tmp_out,
-                                minimap2 = .programs$minimap2,
-                                samtools = .programs$samtools))
-        d <- do.call(get_barcodes, args)
+        alignment_prefix <- file.path(aln_out, idx, idx)
+        dir.create(dirname(alignment_prefix), FALSE, TRUE)
+        d <- get_barcodes(fq,
+                          dada_err,
+                          alignment_prefix = alignment_prefix,
+                          id_prefix = idx,
+                          tmp_dir = tmp_dir,
+                          ...,
+                          minimap2 = .programs$minimap2,
+                          samtools = .programs$samtools)
         if (!is.null(d)) {
+          cmp_prefix <- if (!is.null(alignment_prefix)) {
+            paste0(alignment_prefix, '_seq_comparison.bam')
+          }
           d <- compare_seqs(d,
-                            paste0(out_prefix, '_seq_comparison.bam'),
-                            tmp_prefix = file.path(tmp_out, '_cmp'),
+                            cmp_prefix,
+                            tmp_dir = tmp_dir,
                             known_seq = known_seq,
                             minimap2 = .programs$minimap2,
                             samtools = .programs$samtools)
         }
-        unlink(tmp_out, TRUE)
         d
-      }, cores=cores, export=cluster_export)
-    }, rerun = overwrite)
-    if (length(intersect(sel_comb, names(res))) != length(sel_comb)) {
-      stop(sprintf('It seems that %s is outdated, please delete', cache_file))
+      })
     }
-    seq_tab$clustering[sel_comb] <- res[sel_comb]
+    res <- if (is.null(parallel_lapply_fn)) {
+      process_parallel(idx_batches, process_fn, cores = cores, export = cluster_export)
+    } else {
+      parallel_lapply_fn(idx_batches, process_fn)
+    }
+    res <- unlist(unname(res), recursive=FALSE)
+    stopifnot(sel_comb == names(res))
+    seq_tab$clustering[sel_comb] <- res
     seq_tab <- propagate_data(seq_tab)
   }
   seq_tab
@@ -453,7 +483,7 @@ propagate_data <- function(seq_tab, extra_seq_cols=NULL) {
     for (col in sc[[1]]) {
       seq_tab[[paste0('top_', col)]] = sapply(seq_tab$clustering, function(d) 
         if (!is.null(d)) {
-          d <- filter(d, taxon_num == taxon_num[1])
+          d <- d[d$taxon_num == d$taxon_num[1], ]
           sc[[2]](d[[col]])
         } else NA
       )
@@ -481,108 +511,143 @@ propagate_data <- function(seq_tab, extra_seq_cols=NULL) {
   seq_tab
 }
 
-load_taxdb <- function(db_dir, db_type, db_urls, db_tax_urls=NULL, ...) {
-  db_hash <- tools::md5sum(bytes=charToRaw(paste(sort(db_urls), collapse='')))
-  taxdb_file <- file.path(db_dir, paste0(db_hash, '.fasta.gz'))
-  if (!file.exists(taxdb_file)) {
-    message('Downloading taxonomy database: ', paste(db_urls, collapse=', '))
-    stopifnot(db_type %in% c('unite', 'qiime_fasta', 'qiime_qza'))
-    load_fn <- get(paste0('load_', db_type))
-    load_fn(db_urls, taxdb_file, tax_urls=db_tax_urls)
-  }
-  taxdb_file
+
+
+assign_compare_taxonomy <- function(seq_tab,
+                                    db_file,
+                                    gbif_cache_file,
+                                    tmp_dir = NULL,
+                                    confidence_threshold = 0.8,
+                                    summary_ranks = NULL,
+                                    known_contaminants = NULL,
+                                    likely_kingdom = NULL,
+                                    contam_rank_delta = 3,
+                                    cores = 1) {
+  tax <- run_taxonomy_assignment(
+    seq_tab,
+    db_file,
+    tmp_dir = tmp_dir,
+    confidence_threshold = confidence_threshold,
+    summary_ranks = summary_ranks,
+    cores = cores
+  )
+  seq_tab <- compare_morpho_taxonomy(
+    tax$seq_tab,
+    tax$seq_lineages,
+    gbif_cache_file,
+    known_contaminants = known_contaminants,
+    likely_kingdom = likely_kingdom,
+    contam_rank_delta = contam_rank_delta
+  )
+  attr(seq_tab, 'summary_ranks') <- tax$summary_ranks
+  seq_tab
+  
 }
 
-
 run_taxonomy_assignment <- function(seq_tab,
-                                    prefix,
-                                    taxdb_file,
-                                    gbif_taxdb_dir = 'taxdb',
-                                    known_contaminants = NULL,
+                                    db_file,
+                                    tmp_dir = NULL,
                                     confidence_threshold = 0.8,
-                                    kingdom = NULL,
-                                    contam_rank_delta = 3,
                                     summary_ranks = NULL,
-                                    ...) {
-  # Since there can be duplicates, we dereplicate before doing further analyses.
+                                    cores = 1) {
+  # De-duplicate sequences
+  stopifnot(!is.null(seq_tab$clustering))
   unique_seqs <- sort(unique(unlist(
     lapply(seq_tab$clustering, function(d)
       d$consensus)
   )))
+  stopifnot(!is.null(unique_seqs))
   names(unique_seqs) = paste0('u', seq_along(unique_seqs))
   unique_map <- setNames(names(unique_seqs), unique_seqs)
-  unique_seqs_file <- paste0(prefix, '_unique_seqs.fasta')
-  seqs_updated <- !file.exists(unique_seqs_file) ||
-    !isTRUE(all.equal(as.character(read_dna(unique_seqs_file))[names(unique_seqs)], unique_seqs))
-  if (seqs_updated) {
-    write_dna(unique_seqs, unique_seqs_file)
-  }
   
   # assign using SINTAX
-  auto_lineages <- run_or_read(paste0(prefix, '_tab.tsv'), function() {
-    assign_taxonomy(unique_seqs,
-                    taxdb_file,
-                    threshold = confidence_threshold,
-                    vsearch = .programs$vsearch,
-                    threads = cores)
-  }, rerun = seqs_updated)
-  auto_lineages <- as.matrix(auto_lineages)
-  stopifnot(length(setdiff(names(unique_seqs), rownames(auto_lineages))) == 0)
+  seqs_tmp <- tempfile('seqs', tmpdir = tmp_dir %||% tempdir(), fileext =
+                         '.fasta')
+  write_dna(unique_seqs, seqs_tmp)
+  seq_lineages <- assign_taxonomy_sintax(
+    seqs_tmp,
+    db_file,
+    confidence_threshold = confidence_threshold,
+    vsearch = .programs$vsearch,
+    threads = cores
+  )
+  seq_lineages <- as.matrix(seq_lineages)
+  stopifnot(length(setdiff(
+    names(unique_seqs), rownames(seq_lineages)
+  )) == 0)
+  file.remove(seqs_tmp)
   
   # summarize higher ranks at appropriate level
+  # (for reports)
   if (is.null(summary_ranks)) {
-    top_seq <- na.omit(sapply(seq_tab$clustering, function(t) t$consensus[1] %||% NA))
-    l <- auto_lineages[match(unique_map[top_seq], rownames(auto_lineages)), , drop = FALSE]
-    n.names = apply(l, 2, function(x) sum(cumsum(prop.table(sort(table(x), TRUE))) >= 0.7))
-    def.frac = apply(l, 2, function(x) mean(!is.na(x)))
+    top_seq <- na.omit(sapply(seq_tab$clustering, function(t)
+      t$consensus[1] %||% NA))
+    l <- seq_lineages[match(unique_map[top_seq], rownames(seq_lineages)), , drop = FALSE]
+    n.names = apply(l, 2, function(x)
+      sum(cumsum(prop.table(
+        sort(table(x), TRUE)
+      )) >= 0.7))
+    def.frac = apply(l, 2, function(x)
+      mean(!is.na(x)))
+    # Determine the last rank with <= 20 taxa and also >= 40% lineages need to be non-NA.
+    # All lower ranks with more taxa/more NAs will be ignored
     i <- tail(which(n.names <= 20 & def.frac >= 0.4), 1)
     if (length(i) == 0) {
       i <- 1
     }
     l <- l[, 1:i, drop = FALSE]
-    abundant.taxa = names(head(sort(table(l[, ncol(l)]), T), 10))
-    n.unique = apply(l[l[, ncol(l)] %in% abundant.taxa, , drop=FALSE],
-                     2,
-                     function(x) length(unique(na.omit(x))))
-    summary_ranks <- colnames(auto_lineages)[sort(unique(c(2, tail(which(n.unique > 1), 2))))]
-    saveRDS(summary_ranks, paste0(prefix, '_summary_ranks.rds'))
+    # The last column in 'l' will have the reported name
+    # Thinking about plots where rare names will be lumped together in an 'Other' category,
+    # we don't want to include ranks that would all have the same name for those
+    # top ~ 10 taxa
+    abundant.taxa = names(head(sort(table(l[, ncol(l)]), TRUE), 10))
+    n.names.top = apply(l[l[, ncol(l)] %in% abundant.taxa, , drop = FALSE], 2, function(x)
+      length(unique(na.omit(x))))
+    # Select 2nd rank (usually phylum) + max. 2 ranks including the one selected above
+    summary_rank_i <- sort(unique(c(
+      min(2, length(n.names.top)), tail(which(n.names.top > 1), 2), length(n.names.top)
+    )))
+    summary_ranks <- colnames(seq_lineages)[summary_rank_i]
+  } else {
+    summary_ranks <- intersect(summary_ranks, colnames(seq_lineages))
+    stopifnot(length(summary_ranks) > 0)
   }
-
-  # create taxa names
-  for (rank in c('genus', 'species')) {
-    if (!(rank %in% colnames(auto_lineages))) {
-      auto_lineages <- cbind(auto_lineages, NA)
-      colnames(auto_lineages)[ncol(auto_lineages)] <- rank
-    }
-  }
-  highest_taxon <- apply(auto_lineages, 1, function(l) tail(na.omit(l), 1)[1])
-  taxname <- ifelse(is.na(highest_taxon), 'Unknown', paste('Unknown', highest_taxon))
-  has_spec <- !is.na(auto_lineages[, 'species'])
-  gen_only <- !is.na(auto_lineages[, 'genus']) & !has_spec
-  taxname[has_spec] <- auto_lineages[has_spec, 'species']
-  taxname[gen_only] <- paste(auto_lineages[gen_only & !has_spec, 'genus'], 'sp.')
-  auto_lineages <- cbind(name = taxname, auto_lineages)
-
-  # taxa names and short lineages add to seq_tab
-  has_seqs <- seq_tab$n_reads > 0
+  
+  # taxa names
+  seq_lineages <- cbind(name = make_taxon_name(seq_lineages), seq_lineages)
+  
+  # add unique seq codes, taxa names and short lineages to seq_tab
+  has_seqs <- !sapply(seq_tab$clustering, is.null)
   seq_tab$clustering[has_seqs] = lapply(seq_tab$clustering[has_seqs], function(d) {
-    unique_id <- unique_map[d$consensus]
-    d$taxon = auto_lineages[unique_id, 'name']
-    d$short_lineage = apply(
-      auto_lineages[unique_id, summary_ranks, drop = FALSE],
-      1,
-      function(x) {
-        if (all(is.na(x))) NA else paste(na.omit(x), collapse = ' / ')
-      }
-    )
+    d$unique_id <- unique_map[d$consensus]
+    d$taxon = seq_lineages[d$unique_id, 'name']
+    d$short_lineage = apply(seq_lineages[d$unique_id, summary_ranks, drop = FALSE], 1, function(x) {
+      if (all(is.na(x)))
+        NA
+      else
+        paste(na.omit(x), collapse = ' / ')
+    })
     d
   })
   
+  list(seq_tab = seq_tab,
+       seq_lineages = seq_lineages,
+       summary_ranks = summary_ranks)
+}
+
+
+compare_morpho_taxonomy <- function(seq_tab,
+                                    seq_lineages,
+                                    gbif_cache_file,
+                                    known_contaminants = NULL,
+                                    likely_kingdom = NULL,
+                                    contam_rank_delta = 3) {
+
   # blacklist contaminants
+  has_seqs <- !sapply(seq_tab$clustering, is.null)
   seq_tab$clustering[has_seqs] = lapply(seq_tab$clustering[has_seqs], function(d) {
-    unique_id <- unique_map[d$consensus]
-    stopifnot(!is.na(unique_id))
-    lineages <- auto_lineages[unique_id, , drop = F]
+    stopifnot(!is.null(d$unique_id))
+    lineages <- seq_lineages[d$unique_id, , drop = F]
     # assign to contaminant if any member of a taxon has a known contaminant name
     d$is_contaminant = FALSE
     for (rank in setdiff(names(known_contaminants), colnames(lineages))) {
@@ -592,16 +657,6 @@ run_taxonomy_assignment <- function(seq_tab,
     d
   })
   
-  # get lineages from GBIF (used below)
-  gbif_db <- file.path(gbif_taxdb_dir, sprintf('gbif_tax_%s.tsv', kingdom %||% ''))
-  auto_lineages_gbif <- gbif_taxa(
-    auto_lineages,
-    cache_file = gbif_db,
-    likely_kingdom = kingdom,
-    verbose = TRUE
-  )
-  row.names(auto_lineages_gbif) <- row.names(auto_lineages)
-  
   # try to find other contamination based on name matching
   if (!('morpho_taxon' %in% names(seq_tab))) {
     seq_tab$morpho_taxon = NA
@@ -609,12 +664,19 @@ run_taxonomy_assignment <- function(seq_tab,
   
   morpho_taxon <- unique(na.omit(seq_tab$morpho_taxon))
   if (length(morpho_taxon) > 0) {
-    # match against GBIF
-    kingdom <- kingdom %||% NA
+    # get lineages from GBIF
+    likely_kingdom <- as.character(likely_kingdom %||% NA)
+    seq_lineages_gbif <- gbif_taxa(
+      seq_lineages,
+      cache_file = gbif_cache_file,
+      likely_kingdom = likely_kingdom,
+      verbose = TRUE
+    )
+    row.names(seq_lineages_gbif) <- row.names(seq_lineages)
     morpho_lineages_gbif <- gbif_taxa(
       morpho_taxon,
-      cache_file = gbif_db,
-      likely_kingdom = kingdom,
+      cache_file = gbif_cache_file,
+      likely_kingdom = likely_kingdom,
       verbose = TRUE
     )
     row.names(morpho_lineages_gbif) <- morpho_taxon
@@ -629,9 +691,7 @@ run_taxonomy_assignment <- function(seq_tab,
       d <- d[order(-max_abund, d$taxon_num, -d$n_mapped), ]
       # calculate taxa overlap (proportion of matching names in the lineage)
       morpho_lineage <- morpho_lineages_gbif[taxon, ]
-      unique_id <- unique_map[d$consensus]
-      stopifnot(!is.na(unique_id))
-      seq_lineages <- auto_lineages_gbif[unique_id,, drop = FALSE]
+      seq_lineages <- seq_lineages_gbif[d$unique_id,, drop = FALSE]
       lineage_cmp <- t(apply(seq_lineages, 1, function(l) l == morpho_lineage))
       d$matching_ranks = rowSums(lineage_cmp, na.rm = TRUE)
       d$mismatching_ranks = rowSums(!lineage_cmp, na.rm = TRUE)
@@ -672,9 +732,8 @@ run_taxonomy_assignment <- function(seq_tab,
     })
   }
   
-  # move contaminant compound clusters down to be located *after*
-  # the most abundant non-contaminant taxon,
-  # and after this, do some more checks
+  # move contaminant taxa down to be located *after* the most abundant
+  # non-contaminant taxon
   seq_tab$has_contamination = sapply(seq_tab$clustering, function(d) isTRUE(d$is_contaminant[1]))
   seq_tab$clustering[has_seqs] = lapply(which(has_seqs), function(i) {
     # cat(i, ' ')
@@ -685,24 +744,27 @@ run_taxonomy_assignment <- function(seq_tab,
 
     # add 'unspecific'
     d$unspecific = d$taxon_num != d$taxon_num[1] | d$is_rare
-    
+    d
+  })
+  
+  # check group over-abundance and suspiciously similar taxonomy
+  seq_tab$clustering[has_seqs] = lapply(seq_tab$clustering[has_seqs], function(d) {
     # check group1 over-abundance
     grp <- unique(d$taxon_num)
     if (length(grp) > 1) {
       grp_abund <- ave(d$n_mapped, d$taxon_num, FUN=sum)
       is_grp1 <- d$taxon_num == grp[1]
       abund_ratio <- grp_abund[is_grp1][1] / grp_abund
-      if (abund_ratio[d$taxon_num == grp[2]][1] < 3) {
+      grp2_ratio <- abund_ratio[d$taxon_num == grp[2]][1]
+      if (grp2_ratio < 3 && grp2_ratio >= 1) {
         d$message[is_grp1] <- paste(
           d$message[is_grp1],
           '< 3 times overabundant;'
         )
       }
-      # also check if taxonomy is suspiciously similar
-      # within 8x abundance range
-      unique_id <- unique_map[d$consensus]
-      seq_lineages <- auto_lineages_gbif[unique_id,, drop = FALSE]
-      lineage_cmp <- t(apply(seq_lineages, 1, function(l) l == seq_lineages[1,]))
+      # suspiciously similar within 8x abundance range?
+      lineages <- seq_lineages[d$unique_id, , drop = F]
+      lineage_cmp <- t(apply(lineages, 1, function(l) l == lineages[1,]))
       rank_match <- ave(rowSums(lineage_cmp, na.rm = TRUE), d$taxon_num)
       rank_match_delta <- rank_match[1] - rank_match
       rank_mismatch <- ave(rowSums(!lineage_cmp, na.rm = TRUE), d$taxon_num)
@@ -715,10 +777,7 @@ run_taxonomy_assignment <- function(seq_tab,
     }
     d
   })
-  seq_tab
-}
-
-propagate_tax_data <- function(seq_tab) {
+  
   propagate_data(
     seq_tab,
     extra_seq_cols = c(
@@ -728,7 +787,7 @@ propagate_tax_data <- function(seq_tab) {
       'short_lineage',
       'message'
     )
-  )  
+  )
 }
 
 
@@ -763,11 +822,12 @@ require_bash <- function() {
 }
 
 #' Run a command in Bash, which should work on Linux, OS-X and Windows WSL
-#' **Note**: assuming **no** spaces in arguments
+#' **Note**: assuming **no** spaces in arguments (no spaces in paths!)
 run_bash <- function(cmd, stdout = '', stderr = '', ...) {
   cmd <- paste(cmd, collapse=' ')
-  rv <- system2('bash', c('-c', shQuote(cmd)),
-                stdout = stdout, stderr = stderr, ...)
+  print(cmd)
+  full_cmd <- paste0('set -euo pipefail; ', cmd)
+  rv <- system2('bash', c('-c', shQuote(full_cmd)), stdout = stdout, stderr = stderr, ...)
   code <- if (isTRUE(stdout) || isTRUE(stderr)) {
     attr(rv, 'status') %||% 0
   } else {
@@ -780,44 +840,21 @@ run_bash <- function(cmd, stdout = '', stderr = '', ...) {
 }
 
 bash_cmd_succeeds <- function(cmd) {
-  !is.null(tryCatch(run_bash(cmd, stderr=TRUE), error=function(e) NULL))
+  !is.null(tryCatch(run_bash(cmd, stdout = FALSE, stderr = FALSE), error=function(e) NULL))
 }
 
 
-parallel_lapply <- function(data, func, cores=1, export=NULL) {
+process_parallel <- function(data, func, cores = 1, export = NULL) {
   if (cores > 1) {
     cl <- parallel::makeCluster(cores)
     if (!is.null(export))
-      parallel::clusterExport(cl=cl, export)
+      parallel::clusterExport(cl = cl, export)
+    tryCatch(parallel::parLapply(cl = cl, data, func),
+             finally = parallel::stopCluster(cl))
   } else {
-    cl <- NULL
-  }
-  tryCatch(pbapply::pblapply(data, func, cl=cl),
-           finally=if (!is.null(cl)) parallel::stopCluster(cl))
-}
-
-run_or_load <- function(rds_file, run_fn, rerun=FALSE) {
-  if (!file.exists(rds_file) || rerun) {
-    res <- run_fn()
-    saveRDS(res, rds_file)
-    res
-  } else {
-    readRDS(rds_file)
+    lapply(data, func)
   }
 }
-
-run_or_read <- function(tsv_file, run_fn, rerun=FALSE) {
-  if (!file.exists(tsv_file) || rerun) {
-    res <- run_fn()
-    write.table(res, tsv_file, sep='\t', quote=F, na='')
-    res
-  } else {
-    read.delim(tsv_file, na.strings='')
-  }
-}
-
-
-
 
 
 #### Setup globals ############################################

@@ -2,14 +2,7 @@
 # (more = faster, but more memory;  for clustering the usage can sometimes be 3GB per core)
 cores: 4
 
-# Temporary directory for short-lived files created during the clustering process.
-# If the 'analysis' directory is on a slow filesystem (e.g. HDD), setting
-# 'tmp_dir' to a location on a fast SSD or even RAM (e.g. https://en.wikipedia.org/wiki/Tmpfs)
-# may considerably speed up the process
-tmp_dir: /run/user/1000/dada-ont-barcoding
-
-# Sample de-multiplexing
-# (search and remove primers + sample indexes, filter by quality)
+# Sample de-multiplexing and primer trimming
 demultiplex:
   # maximum error rate for the primer search
   primer_max_err: 0.2
@@ -21,6 +14,10 @@ demultiplex:
   # Maximum estimated sequencing errors allowed (based on quality scores)
   # This may be adjusted based on how Figures 4 and 5 look like.
   error_threshold: 2.5
+  # Keep demultiplexed FASTQ files in temporary directory
+  keep: true
+  # Also keep trimmed FASTQ files for troubleshooting
+  keep_trimmed: true
 
 # Infer barcode sequences 
 # For more settings see also get_barcodes() function in R/cluster.R
@@ -28,6 +25,10 @@ cluster:
   # use a maximum of N reads from each sample for denoising
   # lower = faster, but less precise
   max_sample_depth: 5000
+
+  # maximum sample depth for contaminated samples
+  # (not setting this means unlimited depth)
+  max_contam_sample_depth: 15000
 
   # the minimum number of supporting reads needed for sequences to show up
   # in the analysis (lower -> rare variants show up in the analysis, but more noise)
@@ -37,6 +38,15 @@ cluster:
   # higer values -> more conservative, more ambiguities will appear, and homopolymer
   # stretches can have ambiguous bases, since Nanopore reads are often noisy there.
   consensus_threshold: 0.65
+
+  # 'true' is the default; set to 'false' if you don't want to inspect the BAM alignment files
+  save_alignments: true
+
+  # Temporary directory for short-lived files created during the clustering process.
+  # If the 'analysis' directory is on a slow filesystem (e.g. HDD), setting
+  # 'tmp_dir' to a location on a fast SSD or even RAM (e.g. https://en.wikipedia.org/wiki/Tmpfs)
+  # may considerably speed up the process
+  tmp_dir: /run/user/1000/dada-ont-barcoding
 
 taxonomy:
   # Bootstrap confidence threshold for taxonomic assignments

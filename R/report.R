@@ -5,8 +5,7 @@ create_report <- function(seq_tab,
                           low_abund_threshold = 20,
                           min_seqs = 3,
                           n_curate = 4,
-                          max_seqs = 6,
-                          ...) {
+                          max_seqs = 6) {
   
   seq_tab_def <- seq_tab[!is.na(seq_tab$sample) | !is.na(seq_tab$n_reads) & seq_tab$n_reads >= min_seqs,]
 

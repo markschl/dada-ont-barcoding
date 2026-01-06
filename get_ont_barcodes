@@ -1,0 +1,17 @@
+#!/usr/bin/env bash
+
+set -euo pipefail
+
+if [[ "$#" < 1 || "$#" > 2 ]]; then
+  echo "Usage: $0 analysis_dir [n_workers]" >&2
+  exit 1
+fi
+
+
+analysis_dir="$1"
+cores=1
+if [[ "$#" == 2 ]]; then
+  cores="$2"
+fi
+
+ANALYSIS_DIR=$analysis_dir N_WORKERS=$cores Rscript -e "targets::tar_make()"

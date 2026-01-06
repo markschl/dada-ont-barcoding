@@ -2,11 +2,13 @@ _*
 *~
 *.pdf
 *.Rproj
+!_targets.R
 
 analysis.html
 analysis.pdf
 /analysis/
 !/analysis/templates/*
+tmp/
 
 bin/
 taxdb/
