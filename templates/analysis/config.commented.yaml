@@ -1,18 +1,10 @@
-# Number of parallel processes (threads) to run simultaneously for computations
-# (more = faster, but more memory;  for clustering the usage can sometimes be 3GB per core)
-cores: 4
 
 # Sample de-multiplexing and primer trimming
 demultiplex:
-  # maximum error rate for the primer search
+  # Settings passed to `do_trim_demux` (these are the defaults that can be modified)
   primer_max_err: 0.2
-  # maximum number of differences (substitutions, InDels) when
-  # searching for the barcodes (don't set too high!)
   idx_max_diffs: 0
-  # minimum read length: make sure it is shorter than your barcode(s)
   min_barcode_length: 50
-  # Maximum estimated sequencing errors allowed (based on quality scores)
-  # This may be adjusted based on how Figures 4 and 5 look like.
   error_threshold: 2.5
   # Keep demultiplexed FASTQ files in temporary directory
   keep: true
@@ -20,7 +12,7 @@ demultiplex:
   keep_trimmed: true
 
 # Infer barcode sequences 
-# For more settings see also get_barcodes() function in R/cluster.R
+# For more settings see also infer_barcodes() function in R/cluster.R
 cluster:
   # use a maximum of N reads from each sample for denoising
   # lower = faster, but less precise
@@ -46,7 +38,7 @@ cluster:
   # If the 'analysis' directory is on a slow filesystem (e.g. HDD), setting
   # 'tmp_dir' to a location on a fast SSD or even RAM (e.g. https://en.wikipedia.org/wiki/Tmpfs)
   # may considerably speed up the process
-  tmp_dir: /run/user/1000/dada-ont-barcoding
+  tmp_dir: /run/user/1000/DadaNanoBC
 
 taxonomy:
   # Bootstrap confidence threshold for taxonomic assignments
@@ -88,13 +80,18 @@ taxonomy:
     contam_rank_delta: 2
 
 
-report:
-  # Sequencing depth threshold regarded as critical, below which there
-  # is an increased risk of barcode sequence errors ('low coverage' warning)
-  low_abund_threshold: 20
+output:
+  report:
+    # Sequencing depth threshold regarded as critical, below which there
+    # is an increased risk of barcode sequence errors ('low coverage' warning)
+    low_abund_threshold: 20
 
-  # Max. number of haplotype/polymorphic sequences to show in the 'Curation' section
-  n_curate: 4
+    # Max. number of haplotype/polymorphic sequences to show in the 'Curation' section
+    n_curate: 4
 
-  # Maximum number of haplotype/polymorphic sequences to report for the top taxon
-  max_seqs: 6
+    # Maximum number of haplotype/polymorphic sequences to report for the top taxon
+    max_seqs: 6
+
+  # keep all individual BAM files in the 'alignments' subdirectory
+  # (for manual inspection of unspecific sequences or in case of incorrectly recognized contamination)
+  all_alignments: true

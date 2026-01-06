@@ -1,16 +1,7 @@
 
-setup_pipeline <- function() {
-  p <- installed.packages()[,c('Package')]
-  p <- setdiff(c('openxlsx2', 'stringr', 'pbapply'), p)
-  if (length(p) > 0) {
-    install.packages(p)
-  }
-  install_cluster_deps()
-  install_sequtil_deps()
-  install_taxonomy_deps()
-  require_bash()
-}
-
+#' Reads a sample table from an Excel metadata file and passes it on to [parse_sample_tab]
+#'
+#' @export
 read_xlsx_sample_tab <- function(meta_file, sheet_name) {
   sample_tab <- openxlsx2::read_xlsx(
     meta_file,
@@ -25,6 +16,44 @@ read_xlsx_sample_tab <- function(meta_file, sheet_name) {
   parse_sample_tab(sample_tab)
 }
 
+#' Parse a data frame with sample metadata
+#'
+#' @param sample_tab The sample table (data frame-like, see details)
+#'
+#' @details
+#'
+#' Required columns:
+#'
+#' - Plate
+#' - *plate*: A01-H12)
+#' - *amplicon*: `forward-reverse`, name as in 'primer_index' column of primer table;
+#'   see [parse_primer_tab]
+#' - *indexes*: `forward-reverse`, name as in 'primer_index' column of primer table;
+#'   see [parse_primer_tab]
+#' - *sample*: sample name, should not be duplicated
+#' - *sample_type*: Sample type such as 'negative control', will show up in reports;
+#'   can be left empty
+#'
+#' Optional columns:
+#'
+#' - *morpho-taxon*: Known or suspected taxon (any rank), will be compared to
+#'   the sequence-based identification and used for detecting contamination
+#' - *known sequence*: Already known sequence (if any), e.g. from a previous Sanger
+#'   sequencing; will be compared with the Nanopore-derived sequence
+#'
+#' @returns a valid sample metadata table (data frame)
+#'   with sample names de-duplicated (if necessary)
+#'
+#' @details
+#' ## Note on amplicon multiplexing
+#'
+#' Primers are searched in the order that amplicons appear in the sample table
+#' With *nested amplicons*, the shorter one should be placed at the end.
+#' Also place amplicons with *little data* before other amplicons with similar
+#' primers to make sure that they don't get "swallowed" in case of unspecific
+#' primer or sample index matching.
+#'
+#' @export
 parse_sample_tab <- function(sample_tab) {
   # normalize & validate headers
   names(sample_tab) <- gsub('[- .]+', '_', tolower(names(sample_tab)))
@@ -34,14 +63,14 @@ parse_sample_tab <- function(sample_tab) {
     stop('The sample metadata table is missing some columns: ',
          paste(missing_cols, collapse=', '))
   }
-  
+
   # remove barcodes without sample name
   sample_tab <- sample_tab[!is.na(sample_tab$sample),]
-  
+
   # Check for duplicates
-  
+
   sample_tab$unique_sample = sample_tab$sample
-  # sample_tab <- sample_tab %>% 
+  # sample_tab <- sample_tab %>%
   #   relocate(unique_sample, .after='sample')
   dup_s <- unique(sample_tab$unique_sample[duplicated(sample_tab$unique_sample)])
   if (length(dup_s[dup_s != '0']) > 0) {
@@ -51,7 +80,7 @@ parse_sample_tab <- function(sample_tab) {
     sel <- sample_tab$unique_sample %in% dup_s
     sample_tab$unique_sample[sel] = with(sample_tab[sel, ], paste(unique_sample, plate, well, sep='_'))
   }
-  
+
   # check known sequence (enforce IUPAC alphabet)
   if (!is.null(sample_tab$known_sequence) && any(!is.na(sample_tab$known_sequence))) {
     # do some simple cleaning
@@ -74,11 +103,43 @@ parse_sample_tab <- function(sample_tab) {
   sample_tab
 }
 
+#' @export
 read_xlsx_primer_tab <- function(meta_file, sheet_name, ...) {
   primer_tab <- openxlsx2::read_xlsx(meta_file, sheet_name, na.strings = c(''))
   parse_primer_tab(primer_tab, ...)
 }
 
+#' Parse a data frame with primer information
+#'
+#' @param primer_tab Primer table (data frame-like; see details)
+#' @param amplicons Character vector of amplicons pooled in the library;
+#' their names should be in the form `forward-reverse` (primer names should not contain dashes)
+#'
+#' @details
+#'
+#' Columns of `primer_tab`:
+#'
+#' - *primer-index*: Primer name and sample index name, delimited by a dash;
+#'   the primer names **must not contain dashes** and both *primer* and *index*
+#'   should correspond to the names in the *amplicon* column of the sample table
+#'   (see [parse_sample_tab]).
+#' - *index_seq* sample index sequence
+#' - *primer_seq* primer sequence (repeated)
+#'
+#' If `amplicon` is not provided, the forward/reverse primers are assumed to be
+#' in order. `amplicon` may be obtained from the *amplicon* column of the sample
+#' table (see [parse_sample_tab]).
+#'
+#' @returns a named list of amplicon metadata (named by amplicons = `forward-reverse`).
+#' Each amplicon-specific item is another list with *two entries* (for forward and reverse),
+#' which are again lists with following entries:
+#'
+#'  - *primer*: named vector of primer sequences
+#'  - *index*: named vector of index sequences
+#'  - *index_len*: the length of the index sequences (no variable length currently allowed,
+#'    but lengths may vary between forward and reverse sample indexes)
+#'
+#' @export
 parse_primer_tab <- function(primer_tab, amplicons = NULL) {
   # normalize & validate headers
   names(primer_tab) <- gsub('[- .]+', '_', tolower(names(primer_tab)))
@@ -88,37 +149,37 @@ parse_primer_tab <- function(primer_tab, amplicons = NULL) {
     stop('The primers table is missing some columns: ',
          paste(missing_cols, collapse=', '))
   }
-  primer_tab$primer_name <- gsub('_.*', '', primer_tab$primer_index)
+  primer_tab$primer_name <- gsub('-.*', '', primer_tab$primer_index)
   stopifnot(!duplicated(primer_tab$primer_index))
-  
+
   # validate amplicons and primer names
   primers <- split(primer_tab, primer_tab$primer_name)
   if (is.null(amplicons)) {
     stopifnot(length(primers) == 2)
     amplicons <- unique(primer_tab$primer_name)
   }
-  amp_primer_names <- strsplit(amplicons, '_', fixed=TRUE)
+  amp_primer_names <- strsplit(amplicons, '-', fixed=TRUE)
   names(amp_primer_names) <- amplicons
-  
+
   primers_only <- setdiff(names(primers), unlist(amp_primer_names))
   amp_only <- setdiff(unlist(amp_primer_names), names(primers))
   if (length(primers_only) > 0) {
-    stop("Some primer name(s) found only in the 'primer' sheet, but not ",
-         "in the 'sample_list' sheet: ",
+    stop("Some primer name(s) found only in the primers table sheet, but not ",
+         "in the amplicons (samples table): ",
          paste(primers_only, collapse=', '))
   }
   if (length(amp_only) > 0) {
-    stop("Some primer name(s) found only in the 'sample_list' sheet, but not ",
-         "in the 'primer' sheet: ",
+    stop("Some primer name(s) found only in the amplicon names (samples table), ",
+         "but not in the primers table: ",
          paste(amp_only, collapse=', '))
   }
-  
+
   # collect per-amplicon primer/index information
   lapply(amp_primer_names, function(p) {
     if (length(p) != 2) {
-      stop("The 'amplicon' column in the samples list needs to be in the form 'forward_reverse' ",
+      stop("The 'amplicon' column in the samples list needs to be in the form 'forward-reverse' ",
            "where the forward/reverse primer name has to match the primer names in ",
-           "the 'primer_index' column of the 'primers' sheet.")
+           "the 'primer-index' column of the primers table (not dashes allowed in primer names).")
     }
     comb <- list(forward=primers[[p[1]]], reverse=primers[[p[2]]])
     lapply(comb, function(d) {
@@ -142,9 +203,37 @@ parse_primer_tab <- function(primer_tab, amplicons = NULL) {
   })
 }
 
-
-
-
+#' Search and remove primers and sample indexes
+#'
+#' @param fq_paths Character vector of FASTQ file paths (compressed or uncompressed)
+#' @param amplicon_primers Amplicon specification, as returned by [parse_primer_tab]
+#' @param sample_tab Sample table as returned by [parse_sample_tab]
+#' @param out_dir Output directory containing the demultiplexed files
+#' (`fprimer_fidx-rprimer_ridx.fastq.gz`)
+#' @param primer_max_err Maximum allowed error rate in primers
+#' (edit distance = substitutions/InDels). Default: 0.2 (20%)
+#' @param idx_max_diffs Maximum allowed differences in forward/reverse sample
+#' index sequences; don't set too high to avoid tag switching ("index hopping")
+#' resulting in a "background noise" of unspecific sequences. Default: 0 differences
+#' @param min_barcode_length Remove trimmed sequences shorter than `min_barcode_length`;
+#' make sure that the value is shorter than your expected minimal barcode length
+#' for *all* amplicons (default: 50 bp)
+#' @param error_threshold Maximum sequencing errors allowed per sequence
+#' (as estimated from quality scores). This threshold impacts how many sequences
+#' pass the filter in (see [do_demux]). Setting it too low may remove too many
+#' sequences, but setting it too high may lead to noisy/errorneous results.
+#' The default value of 2.5 seems to work well with R10.4 data and ~0.5-1.5 kb amplicons,
+#' removing about half of the trimmed sequences.
+#  The value may still be adjusted based on how Figures 4 and 5 in the HTML report.
+#'
+#' @details
+#' This function calls [do_primer_search] and [do_demux] sequentially.
+#'
+#' Requires [seqtool](https://github.com/markschl/seqtool) v0.4 or higher
+#' installed either system-wide (in `PATH`) or locally
+#' (provide path with `set_program_path('seqtool', 'path/to/st')`).
+#'
+#' @export
 do_trim_demux <- function(fq_paths,
                           amplicon_primers,
                           sample_tab,
@@ -156,7 +245,7 @@ do_trim_demux <- function(fq_paths,
                           cores = 1,
                           keep_trimmed = FALSE) {
   trim_dir <- file.path(out_dir, '_trim')
-  trim <- run_primer_search(
+  trim <- do_primer_search(
     fq_paths,
     amplicon_primers,
     trim_dir,
@@ -169,14 +258,19 @@ do_trim_demux <- function(fq_paths,
   if (sum(n$count[n$valid]) == 0) {
     stop('No reads with primer/sample index found!')
   }
-  seq_tab <- run_demux(trim$trimmed_fq, out_dir, sample_tab, error_threshold = error_threshold)
+  seq_tab <- do_demux(trim$trimmed_fq, out_dir, sample_tab, error_threshold = error_threshold)
   if (!keep_trimmed) {
     unlink(trim_dir, TRUE)
   }
   list(seq_tab = seq_tab, trim_stats = trim$stats)
 }
 
-run_primer_search <- function(fq_paths,
+#' Search and remove primer sequences
+#'
+#' Requires [seqtool](https://github.com/markschl/seqtool) v0.4 or higher
+#'
+#' @export
+do_primer_search <- function(fq_paths,
                               amplicon_primers,
                               out_dir,
                               primer_max_err = 0.2,
@@ -184,10 +278,11 @@ run_primer_search <- function(fq_paths,
                               min_barcode_length = 50,
                               cores = 1) {
   amplicons <- names(amplicon_primers)
+  seqtool <- get_program('st', long_name = 'seqtool')
   for (amplicon in amplicons) {
     amp_search_dir <- file.path(out_dir, amplicon)
     demux_fq <- file.path(amp_search_dir, 'trimmed.fastq.zst')
-    
+
     if (length(fq_paths) > 0) {
       cat(amplicon, sep='\n', file=stderr())
       unlink(amp_search_dir)  # clean up old files
@@ -207,7 +302,7 @@ run_primer_search <- function(fq_paths,
         '-o', amp_search_dir,
         '-c', 'zst',
         '-t', cores,
-        '-s', .programs$seqtool
+        '-s', seqtool
       )
       run_bash(c('scripts/find-primers.sh', search_opts, seq_prefix, fq_paths))
     }
@@ -217,10 +312,8 @@ run_primer_search <- function(fq_paths,
                        '.fastq.zst')
     fq_paths <- file.path(amp_search_dir, fq_names)
   }
-  
+
   # read stats files
-  # TODO: move these files to better location?
-  
   # primer start position
   pos <- do.call(rbind, lapply(amplicons, function(amplicon) {
     d <- read.delim(file.path(out_dir, amplicon, 'primer_pos.tsv'),
@@ -229,7 +322,7 @@ run_primer_search <- function(fq_paths,
     d$dir <- factor(d$dir, c('fwd', 'rev'), c('forward', 'reverse'))
     aggregate(count ~ amplicon + dir + pos, data=d, sum)
   }))
-  
+
   # amplicon length
   category_trans <- c(trimmed='regular', concatenated='concatenated products')
   l <- do.call(rbind, lapply(names(amplicon_primers), function(amplicon) {
@@ -288,23 +381,37 @@ run_primer_search <- function(fq_paths,
   )
 }
 
-
-run_demux <- function(primer_search_fq, 
-                      out_dir, 
+#' Group sequences by sample index combination
+#'
+#' The provided FASTQ file should contain the sample indexes in the sequence headers
+#' as follows: `<id> fi=<fwd-idx-name> ri=<rev-idx-name>` (the position in the header
+#' does not matter). Such FASTQ files are produced by [do_primer_search].
+#'
+#' Requires [seqtool](https://github.com/markschl/seqtool) v0.4 or higher
+#'
+#' @returns `sample_tab` with a `reads_path` column and additional rows
+#' for samples found in the reads but not in the sample table
+#'
+#' @details
+#' The read files are named as follows: `fprimer-fidx--rprimer-ridx.fastq.gz`
+#'
+#' @export
+do_demux <- function(primer_search_fq,
+                      out_dir,
                       sample_tab,
-                      error_threshold = 2.5, 
+                      error_threshold = 2.5,
                       min_barcode_length = 50) {
-  
-  stopifnot(c('amplicon', 'indexes', 'sample', 'sample_type', 'morpho_taxon', 'known_sequence') %in% names(sample_tab))
 
+  stopifnot(c('amplicon', 'indexes', 'sample', 'sample_type', 'morpho_taxon', 'known_sequence') %in% names(sample_tab))
+  seqtool <- get_program('st', long_name = 'seqtool')
   run_bash(c('scripts/filter-split.sh',
              error_threshold,
              # **note**: currently, we have only one threshold both in 'find-primers' and 'demux'
              min_barcode_length,
              out_dir,
-             .programs$seqtool,
+             seqtool,
              primer_search_fq))
-  trimmed_fq <- file.path(out_dir, list.files(out_dir, pattern='.fastq.gz$'))  
+  trimmed_fq <- file.path(out_dir, list.files(out_dir, pattern='.fastq.gz$'))
 
   # initialize the sequence table
   sample_tab$i_ <- seq_len(nrow(sample_tab))
@@ -315,9 +422,9 @@ run_demux <- function(primer_search_fq,
     i_ = nrow(sample_tab) + seq_len(length(trimmed_fq))
   )
   t <- cbind(t, stringr::str_match(
-    t$primer_indexes, '(?<fpr>[^_]+)_(?<fidx>[^-]+)-(?<rpr>[^_]+)_(?<ridx>[^-]+)'
+    t$primer_indexes, '(?<fpr>[^-]+)-(?<fidx>[^-]+)--(?<rpr>[^-]+)-(?<ridx>[^-]+)'
   ))
-  t$amplicon <- paste(t$fpr, t$rpr, sep='_')
+  t$amplicon <- paste(t$fpr, t$rpr, sep='-')
   t$indexes = paste(t$fidx, t$ridx, sep='-')
   t <- merge(
     sample_tab,
@@ -327,9 +434,9 @@ run_demux <- function(primer_search_fq,
   )
   t <- t[order(t$i_.x, t$i_.y),]
   t$i_.x <- t$i_.y <- NULL
-  p <- stringr::str_split_fixed(t$amplicon, '_', 2)
+  p <- stringr::str_split_fixed(t$amplicon, '-', 2)
   i <- stringr::str_split_fixed(t$indexes, '-', 2)
-  t$primer_indexes <- sprintf('%s_%s-%s_%s', p[,1], i[,1], p[,2], i[,2])
+  t$primer_indexes <- sprintf('%s-%s--%s-%s', p[,1], i[,1], p[,2], i[,2])
   if (length(unique(na.omit(t$amplicon))) > 0) {
     t$indexes <- t$primer_indexes
   }
@@ -341,87 +448,87 @@ run_demux <- function(primer_search_fq,
   t
 }
 
-run_learn_errors <- function(seq_tab, 
-                             cache_file,
-                             ...,
-                             overwrite = FALSE) {
-  run_or_load(cache_file, function() {
-    dada_learn_errors(sample(na.omit(seq_tab$reads_path)), ...)
-  }, rerun = overwrite)
-}
-
-
-get_amplicon_opts <- function(opts, amplicons) {
-  opts <- opts %||% list()
-  out <- opts[amplicons]
-  names(out) <- amplicons
-  opts[amplicons] <- NULL
-  for (amplicon in amplicons) {
-    out[[amplicon]] <- modifyList(opts, out[[amplicon]] %||% list())
-  }
-  out
-}
-
-
-run_clustering <- function(seq_tab,
-                           dada_err,
-                           cache_file,
-                           aln_out,
-                           tmp_dir = NULL,
-                           parallel_lapply_fn = NULL,
-                           ...,
-                           cores = 1) {
+#' Infer barcode sequences for all samples
+#'
+#' High-level function calling [infer_barcodes] on every sample,
+#' Parallel processing possible with `cores` > 1. Custom parallel processing
+#' frameworks can be plugged in by providing `parallel_lapply_fn`.
+#'
+#' @param seq_tab Sequence metadata table returned by [do_trim_demux] or [do_demux]
+#' @param dada_err Result of [dada_learn_errors]
+#' @param aln_out Optional output directory for BAM alignments (none saved if `NULL`)
+#' @param tmp_dir Optional temporary directory (e.g. [RAM drive](https://en.wikipedia.org/wiki/RAM_drive)
+#'    such as `/run/user/1000/DadaNanoBC` on Linux, for faster processing)
+#'
+#' @returns Input table (`seq_tab`) with a new column `clustering`, which is a list
+#' of data frames as returned by [infer_barcodes]
+#'
+#' @export
+do_infer_all_barcodes <- function(seq_tab,
+                              dada_err,
+                              aln_out = NULL,
+                              tmp_dir = NULL,
+                              parallel_lapply_fn = NULL,
+                              ...,
+                              cores = 1) {
   # for parallel::clusterExport
-  cluster_export <- c('.programs', 'compare_seqs', 'write_dna',
-                     .get_barcodes_export)
+  cluster_export <- c('get_program',
+                      'compare_seqs',
+                      'write_dna',
+                      .infer_barcodes_export)
   idx <- seq_len(nrow(seq_tab))
   stopifnot(!is.null(seq_tab$indexes))
   stopifnot(!is.na(seq_tab$indexes))
-  seq_tab$clustering = vector(mode='list', nrow(seq_tab))
+  seq_tab$clustering = vector(mode = 'list', nrow(seq_tab))
   names(seq_tab$clustering) <- seq_tab$indexes
   names(idx) <- seq_tab$indexes
   sel_comb <- seq_tab$indexes[!is.na(seq_tab$reads_path)]
   if (length(sel_comb) > 0) {
     idx <- idx[sel_comb]
-    batch_size <- max(1, min(12, ceiling(length(idx)/cores/10)))
-    idx_batches <- split(idx, ceiling(1:length(idx)/batch_size))
+    batch_size <- max(1, min(12, ceiling(length(idx) / cores / 10)))
+    idx_batches <- split(idx, ceiling(1:length(idx) / batch_size))
     process_fn <- function(indexes) {
       lapply(indexes, function(i) {
         # i=which(seq_tab$indexes=='ITS5_bc485-ITS4_bc082')
         fq <- seq_tab$reads_path[i]
         known_seq <- seq_tab$known_sequence[i]
-        cat(fq, '\n')
+        # cat(fq, '\n')
         idx <- seq_tab$indexes[i]
-        alignment_prefix <- file.path(aln_out, idx, idx)
-        dir.create(dirname(alignment_prefix), FALSE, TRUE)
-        d <- get_barcodes(fq,
-                          dada_err,
-                          alignment_prefix = alignment_prefix,
-                          id_prefix = idx,
-                          tmp_dir = tmp_dir,
-                          ...,
-                          minimap2 = .programs$minimap2,
-                          samtools = .programs$samtools)
+        if (!is.null(aln_out)) {
+          alignment_prefix <- file.path(aln_out, idx, idx)
+          dir.create(dirname(alignment_prefix), FALSE, TRUE)
+        } else {
+          alignment_prefix <- NULL
+        }
+        d <- infer_barcodes(
+          fq,
+          dada_err,
+          alignment_prefix = alignment_prefix,
+          id_prefix = idx,
+          tmp_dir = tmp_dir,
+          ...
+        )
         if (!is.null(d)) {
-          cmp_prefix <- if (!is.null(alignment_prefix)) {
+          bam_out <- if (!is.null(alignment_prefix)) {
             paste0(alignment_prefix, '_seq_comparison.bam')
           }
           d <- compare_seqs(d,
-                            cmp_prefix,
+                            bam_out = bam_out,
                             tmp_dir = tmp_dir,
-                            known_seq = known_seq,
-                            minimap2 = .programs$minimap2,
-                            samtools = .programs$samtools)
+                            known_seq = known_seq)
         }
         d
       })
     }
     res <- if (is.null(parallel_lapply_fn)) {
-      process_parallel(idx_batches, process_fn, cores = cores, export = cluster_export)
+      process_parallel(idx_batches,
+                       process_fn,
+                       cores = cores,
+                       export = cluster_export)
     } else {
       parallel_lapply_fn(idx_batches, process_fn)
     }
-    res <- unlist(unname(res), recursive=FALSE)
+    res <- unlist(unname(res), recursive = FALSE)
     stopifnot(sel_comb == names(res))
     seq_tab$clustering[sel_comb] <- res
     seq_tab <- propagate_data(seq_tab)
@@ -429,8 +536,17 @@ run_clustering <- function(seq_tab,
   seq_tab
 }
 
-combine_clusters_bam <- function(seq_tab, aln_dir, out_prefix,
-                                 top_only = FALSE) {
+
+#' Combine all BAM alignment files into a single one
+#'
+#' @param seq_tab Sequence table as returned by [do_infer_all_barcodes] or downstream functions
+#' @param aln_dir Alignment directory (as provided to [do_infer_all_barcodes])
+#' @param out_prefix Output prefix for '.bam', '.bam.bai' and '.fasta' files
+#'
+#' @returns Named list of output files
+#'
+#' @export
+do_combine_alignments <- function(seq_tab, aln_dir, out_prefix, top_only = FALSE) {
   # combine mapped reads
   idx_path <- file.path(aln_dir, seq_tab$indexes, seq_tab$indexes)
   sel_i <- which(!is.na(seq_tab$omega_a))
@@ -449,81 +565,141 @@ combine_clusters_bam <- function(seq_tab, aln_dir, out_prefix,
   } else {
     idx_path[sel_i]
   }
-  subset_combine_bam(
-    out_prefix,
-    sel_list,
-    samtools = .programs$samtools
-  )
+  samtools <- get_program('samtools')
+  outfiles <- subset_combine_bam(out_prefix, sel_list, samtools = samtools)
   # combine sequence comparisons
-  sel <- !is.na(seq_tab$has_seq_comparison) & seq_tab$has_seq_comparison
-  subset_combine_bam(
+  sel <- !is.na(seq_tab$has_seq_comparison) &
+    seq_tab$has_seq_comparison
+  cmp_out <- subset_combine_bam(
     paste0(out_prefix, '_seq_comparison'),
     paste0(idx_path, '_seq_comparison')[sel],
     write_refs = FALSE,
-    samtools = .programs$samtools
+    samtools = samtools
   )
+  c(outfiles, cmp_out)
 }
 
+
 #' Propagate information from nested cluster tables to the main seq_tab
-propagate_data <- function(seq_tab, extra_seq_cols=NULL) {
+propagate_data <- function(seq_tab, extra_seq_cols = NULL) {
   # Propagate sample-level attributes to seq_tab
   attr_cols <- c('n_reads', 'n_singletons', 'omega_a', 'has_seq_comparison')
   for (a in attr_cols) {
-    seq_tab[[a]] = sapply(seq_tab$clustering, function(cl) attr(cl, a) %||% NA)
+    seq_tab[[a]] = sapply(seq_tab$clustering, function(cl)
+      attr(cl, a) %||% NA)
   }
   seq_tab$n_reads[is.na(seq_tab$n_reads)] = 0
   seq_tab$singleton_frac = with(seq_tab, n_singletons / n_reads)
-  
+
   # Propagate extra information from the top taxon to seq_tab
-  summary_cols <- list(
-    list(c('n_mapped', 'max_identical', 'n0'), sum),
-    list(c('max_homopoly_len'), max)
-  )
+  summary_cols <- list(list(c('n_mapped', 'max_identical', 'n0'), sum), list(c('max_homopoly_len'), max))
   for (sc in summary_cols) {
     for (col in sc[[1]]) {
-      seq_tab[[paste0('top_', col)]] = sapply(seq_tab$clustering, function(d) 
+      seq_tab[[paste0('top_', col)]] = sapply(seq_tab$clustering, function(d)
         if (!is.null(d)) {
           d <- d[d$taxon_num == d$taxon_num[1], ]
           sc[[2]](d[[col]])
-        } else NA
-      )
+        } else
+          NA)
     }
   }
-  
-  seq_cols <- c('sequence', 'consensus',
-                'consensus_diffs', 'consensus_ambigs',
-                'homopolymer_adjustments',
-                'known_seq_diffs',
-                'method',
-                 extra_seq_cols)
+
+  seq_cols <- c(
+    'sequence',
+    'consensus',
+    'consensus_diffs',
+    'consensus_ambigs',
+    'homopolymer_adjustments',
+    'known_seq_diffs',
+    'method',
+    'message',
+    extra_seq_cols
+  )
   for (col in seq_cols) {
     seq_tab[[paste0('top_seq_', col)]] = sapply(seq_tab$clustering, function(d) {
       d[[col]][1] %||% NA
     })
   }
-  
+
   # more information
   seq_tab$top_n_reads = sapply(seq_tab$clustering, function(d) {
-    if (is.null(d)) 0 else sum(d$taxon_num == d$taxon_num[1] & !d$is_rare)
+    if (is.null(d))
+      0
+    else
+      sum(d$taxon_num == d$taxon_num[1] & !d$is_rare)
   })
   seq_tab$target_cluster_frac = with(seq_tab, top_n_mapped / n_reads)
-  
+
   seq_tab
 }
 
 
-
-assign_compare_taxonomy <- function(seq_tab,
-                                    db_file,
-                                    gbif_cache_file,
-                                    tmp_dir = NULL,
-                                    confidence_threshold = 0.8,
-                                    summary_ranks = NULL,
-                                    known_contaminants = NULL,
-                                    likely_kingdom = NULL,
-                                    contam_rank_delta = 3,
-                                    cores = 1) {
-  tax <- run_taxonomy_assignment(
+#' Run the taxonomy assignment and compare with provided taxonomic names of specimens
+#'
+#' @param seq_tab Sequence table as returned by [do_infer_all_barcodes] or downstream functions
+#' @param db_file UTAX-formatted sequence database (optionally compressed);
+#' see [load_taxdb]
+#' @param gbif_cache_file Path to cache file for saving GBIF taxonomy lookup results
+#' (may be shared across datasets) (see [get_gbif_taxa])
+#' @param tmp_dir optional temporary directory for saving intermediate sequence files
+#' @param confidence_threshold SINTAX bootstrap threshold (default: 0.8 / 80%)
+#' @param summary_ranks optional named character vector with ranks that should
+#' show up in the lineages (default: determine automatically)
+#' @param known_contaminants nested list specifying known contaminant names,
+#' such as `list(family=c('Aspergillaceae', ...), genus=c(...))`
+#' @param likely_kingdom kingdom name providing some guidance for the GBIF
+#' name search (see [get_gbif_taxa])
+#' @param contam_rank_delta Require at least N additional ranks to be matching
+#' between the provided (usually morphology-based) and the auto-assigned
+#' sequence-based taxonomic lineages for a taxon to be determined as the
+#' "correct" taxon in the mix, and the top taxon being down-ranked
+#'
+#' @returns
+#' `seq_tab`, with the nested data frames in `clustering` **reordered** as such
+#' that dominant taxa flagged as contamination are moved to the bottom.
+#' The following new columns are added:
+#' - *unique_id*: unique sequence id in the form: `u1`, `u2`, etc.
+#' - *taxon*: auto-inferred taxon name
+#'   (*may not be correct, confirm with BLAST or other identification methods*)
+#' - *short_lineage*: taxonomic lineage of the auto-inferred taxon
+#'   (provided or auto-inferred `summary_ranks` shown)
+#' - *is_contaminant*: (logical) `TRUE` for taxa recognized as contamination
+#' - *matching_ranks*: Number of matching taxonomic ranks in the comparison
+#'   between the provided and auto-assigned sequence-based taxonomy
+#'   (usually: kingdom/domain, phylum, class, order, family, genus, species).
+#'   The comparison can only be done up to the highest defined rank in either
+#'   lineage.
+#' - *mismatching_ranks*: Number of non-matching ranks in the comparison
+#'   between the provided and auto-assigned sequence-based taxonomy
+#' - *unspecific*: `TRUE` for all taxa that are not at the top in the clusters table
+#'   after the contamination ranking
+#'
+#' The main `seq_tab` table further contains some columns with data from the
+#' top sequence: *top_seq_matching_ranks*, *top_seq_mismatching_ranks*,
+#' *top_seq_taxon*, *top_seq_short_lineage*
+#'
+#' @details
+#'
+#' Sequences are flagged as contamination (*is_contaminant*) if:
+#' - there exists a less abundant taxon with the correct kingdom
+#'   (compared to *morpho-taxon*, GBIF name comparison guided by `likely_kingdom`)
+#' - a taxon has has at least `contam_rank_delta` more consistent (matching)
+#'   taxonomic ranks in the GBIF lineage than the top taxon
+#'   (explanation for *matching_ranks* above); undefined ranks are excluded
+#'   from the comparison
+#'
+#' @export
+do_assign_compare_taxonomy <- function(seq_tab,
+                                       db_file,
+                                       gbif_cache_file,
+                                       tmp_dir = NULL,
+                                       confidence_threshold = 0.8,
+                                       summary_ranks = NULL,
+                                       known_contaminants = NULL,
+                                       likely_kingdom = NULL,
+                                       contam_rank_delta = 3,
+                                       cores = 1) {
+  tax <- do_assign_taxonomy(
     seq_tab,
     db_file,
     tmp_dir = tmp_dir,
@@ -531,7 +707,7 @@ assign_compare_taxonomy <- function(seq_tab,
     summary_ranks = summary_ranks,
     cores = cores
   )
-  seq_tab <- compare_morpho_taxonomy(
+  seq_tab <- do_compare_morpho_taxonomy(
     tax$seq_tab,
     tax$seq_lineages,
     gbif_cache_file,
@@ -541,15 +717,17 @@ assign_compare_taxonomy <- function(seq_tab,
   )
   attr(seq_tab, 'summary_ranks') <- tax$summary_ranks
   seq_tab
-  
 }
 
-run_taxonomy_assignment <- function(seq_tab,
-                                    db_file,
-                                    tmp_dir = NULL,
-                                    confidence_threshold = 0.8,
-                                    summary_ranks = NULL,
-                                    cores = 1) {
+#' Auto-assign taxonomic names/lineages
+#'
+#' @export
+do_assign_taxonomy <- function(seq_tab,
+                               db_file,
+                               tmp_dir = NULL,
+                               confidence_threshold = 0.8,
+                               summary_ranks = NULL,
+                               cores = 1) {
   # De-duplicate sequences
   stopifnot(!is.null(seq_tab$clustering))
   unique_seqs <- sort(unique(unlist(
@@ -559,7 +737,7 @@ run_taxonomy_assignment <- function(seq_tab,
   stopifnot(!is.null(unique_seqs))
   names(unique_seqs) = paste0('u', seq_along(unique_seqs))
   unique_map <- setNames(names(unique_seqs), unique_seqs)
-  
+
   # assign using SINTAX
   seqs_tmp <- tempfile('seqs', tmpdir = tmp_dir %||% tempdir(), fileext =
                          '.fasta')
@@ -568,7 +746,6 @@ run_taxonomy_assignment <- function(seq_tab,
     seqs_tmp,
     db_file,
     confidence_threshold = confidence_threshold,
-    vsearch = .programs$vsearch,
     threads = cores
   )
   seq_lineages <- as.matrix(seq_lineages)
@@ -576,7 +753,7 @@ run_taxonomy_assignment <- function(seq_tab,
     names(unique_seqs), rownames(seq_lineages)
   )) == 0)
   file.remove(seqs_tmp)
-  
+
   # summarize higher ranks at appropriate level
   # (for reports)
   if (is.null(summary_ranks)) {
@@ -612,10 +789,10 @@ run_taxonomy_assignment <- function(seq_tab,
     summary_ranks <- intersect(summary_ranks, colnames(seq_lineages))
     stopifnot(length(summary_ranks) > 0)
   }
-  
+
   # taxa names
   seq_lineages <- cbind(name = make_taxon_name(seq_lineages), seq_lineages)
-  
+
   # add unique seq codes, taxa names and short lineages to seq_tab
   has_seqs <- !sapply(seq_tab$clustering, is.null)
   seq_tab$clustering[has_seqs] = lapply(seq_tab$clustering[has_seqs], function(d) {
@@ -629,20 +806,22 @@ run_taxonomy_assignment <- function(seq_tab,
     })
     d
   })
-  
-  list(seq_tab = seq_tab,
-       seq_lineages = seq_lineages,
-       summary_ranks = summary_ranks)
+
+  list(
+    seq_tab = seq_tab,
+    seq_lineages = seq_lineages,
+    summary_ranks = summary_ranks
+  )
 }
 
 
-compare_morpho_taxonomy <- function(seq_tab,
-                                    seq_lineages,
-                                    gbif_cache_file,
-                                    known_contaminants = NULL,
-                                    likely_kingdom = NULL,
-                                    contam_rank_delta = 3) {
-
+#' @export
+do_compare_morpho_taxonomy <- function(seq_tab,
+                                       seq_lineages,
+                                       gbif_cache_file,
+                                       known_contaminants = NULL,
+                                       likely_kingdom = NULL,
+                                       contam_rank_delta = 3) {
   # blacklist contaminants
   has_seqs <- !sapply(seq_tab$clustering, is.null)
   seq_tab$clustering[has_seqs] = lapply(seq_tab$clustering[has_seqs], function(d) {
@@ -656,31 +835,31 @@ compare_morpho_taxonomy <- function(seq_tab,
     }
     d
   })
-  
+
   # try to find other contamination based on name matching
   if (!('morpho_taxon' %in% names(seq_tab))) {
     seq_tab$morpho_taxon = NA
   }
-  
+
   morpho_taxon <- unique(na.omit(seq_tab$morpho_taxon))
   if (length(morpho_taxon) > 0) {
     # get lineages from GBIF
     likely_kingdom <- as.character(likely_kingdom %||% NA)
-    seq_lineages_gbif <- gbif_taxa(
+    seq_lineages_gbif <- get_gbif_taxa(
       seq_lineages,
       cache_file = gbif_cache_file,
       likely_kingdom = likely_kingdom,
       verbose = TRUE
     )
     row.names(seq_lineages_gbif) <- row.names(seq_lineages)
-    morpho_lineages_gbif <- gbif_taxa(
+    morpho_lineages_gbif <- get_gbif_taxa(
       morpho_taxon,
       cache_file = gbif_cache_file,
       likely_kingdom = likely_kingdom,
       verbose = TRUE
     )
     row.names(morpho_lineages_gbif) <- morpho_taxon
-    
+
     has_morphospec <- has_seqs & !is.na(seq_tab$morpho_taxon)
     seq_tab$clustering[has_morphospec] <- lapply(which(has_morphospec), function(i) {
       # cat(i, '\n')
@@ -691,8 +870,9 @@ compare_morpho_taxonomy <- function(seq_tab,
       d <- d[order(-max_abund, d$taxon_num, -d$n_mapped), ]
       # calculate taxa overlap (proportion of matching names in the lineage)
       morpho_lineage <- morpho_lineages_gbif[taxon, ]
-      seq_lineages <- seq_lineages_gbif[d$unique_id,, drop = FALSE]
-      lineage_cmp <- t(apply(seq_lineages, 1, function(l) l == morpho_lineage))
+      seq_lineages <- seq_lineages_gbif[d$unique_id, , drop = FALSE]
+      lineage_cmp <- t(apply(seq_lineages, 1, function(l)
+        l == morpho_lineage))
       d$matching_ranks = rowSums(lineage_cmp, na.rm = TRUE)
       d$mismatching_ranks = rowSums(!lineage_cmp, na.rm = TRUE)
       if (all(d$taxon_num == d$taxon_num[1])) {
@@ -701,13 +881,12 @@ compare_morpho_taxonomy <- function(seq_tab,
       # when doing pairwise comparisons of all seqs to the top one, make sure
       # that both lineages have the same length
       # (for the longer lineage, set, values beyond the shorter lineage to NA)
-      lineage_cmp <- ifelse(
-        is.na(lineage_cmp[rep(1, nrow(lineage_cmp)),]) | is.na(lineage_cmp), 
-        NA, 
-        lineage_cmp
-      )
+      lineage_cmp <- ifelse(is.na(lineage_cmp[rep(1, nrow(lineage_cmp)), ]) |
+                              is.na(lineage_cmp),
+                            NA,
+                            lineage_cmp)
       rownames(lineage_cmp) <- d$taxon
-      matching_ranks_adj <- rowSums(lineage_cmp, na.rm=TRUE)
+      matching_ranks_adj <- rowSums(lineage_cmp, na.rm = TRUE)
       # average the mismatch score by taxon (we only move whole clusters to the front)
       matching_ranks_adj <- ave(matching_ranks_adj, d$taxon_num)
       # by how many ranks does the overlap improve if choosing another variant?
@@ -717,149 +896,90 @@ compare_morpho_taxonomy <- function(seq_tab,
       # ignore if < 3 ranks improvement over top taxon
       match_delta[match_delta < contam_rank_delta] = 0
       # also look at kingdom mismatches
-      if (any(lineage_cmp[,1], na.rm=TRUE) & !all(lineage_cmp[,1], na.rm=TRUE)) {
-        match_delta[!is.na(lineage_cmp[,1]) & lineage_cmp[,1]] <- Inf
+      if (any(lineage_cmp[, 1], na.rm = TRUE) &
+          !all(lineage_cmp[, 1], na.rm = TRUE)) {
+        match_delta[!is.na(lineage_cmp[, 1]) & lineage_cmp[, 1]] <- Inf
       }
       if (any(match_delta > 0)) {
         best_i <- which.max(match_delta)
         best_i <- which(d$taxon_num == d$taxon_num[best_i])[1]
         if (any(d$taxon_num != d$taxon_num[1]) && best_i > 1) {
           # flag all groups up to the best one
-          d$is_contaminant[1:(best_i-1)] = TRUE
+          d$is_contaminant[1:(best_i - 1)] = TRUE
         }
       }
       d
     })
   }
-  
+
   # move contaminant taxa down to be located *after* the most abundant
   # non-contaminant taxon
-  seq_tab$has_contamination = sapply(seq_tab$clustering, function(d) isTRUE(d$is_contaminant[1]))
+  seq_tab$has_contamination = sapply(seq_tab$clustering, function(d)
+    isTRUE(d$is_contaminant[1]))
   seq_tab$clustering[has_seqs] = lapply(which(has_seqs), function(i) {
     # cat(i, ' ')
     d <- seq_tab$clustering[[i]]
     # also sort by taxon and abundance (in case it has been reordered above)
-    taxon_abund <- ave(ifelse(d$is_rare, 0, d$n_mapped), d$taxon_num, FUN=sum)
+    taxon_abund <- ave(ifelse(d$is_rare, 0, d$n_mapped), d$taxon_num, FUN =
+                         sum)
     d <- d[order(d$is_contaminant, -taxon_abund, d$taxon_num, -d$n_mapped), ]
 
     # add 'unspecific'
     d$unspecific = d$taxon_num != d$taxon_num[1] | d$is_rare
     d
   })
-  
+
   # check group over-abundance and suspiciously similar taxonomy
   seq_tab$clustering[has_seqs] = lapply(seq_tab$clustering[has_seqs], function(d) {
     # check group1 over-abundance
     grp <- unique(d$taxon_num)
     if (length(grp) > 1) {
-      grp_abund <- ave(d$n_mapped, d$taxon_num, FUN=sum)
+      grp_abund <- ave(d$n_mapped, d$taxon_num, FUN = sum)
       is_grp1 <- d$taxon_num == grp[1]
       abund_ratio <- grp_abund[is_grp1][1] / grp_abund
       grp2_ratio <- abund_ratio[d$taxon_num == grp[2]][1]
       if (grp2_ratio < 3 && grp2_ratio >= 1) {
-        d$message[is_grp1] <- paste(
-          d$message[is_grp1],
-          '< 3 times overabundant;'
-        )
+        d$message[is_grp1] <- paste(d$message[is_grp1], '< 3 times overabundant;')
       }
       # suspiciously similar within 8x abundance range?
       lineages <- seq_lineages[d$unique_id, , drop = F]
-      lineage_cmp <- t(apply(lineages, 1, function(l) l == lineages[1,]))
+      lineage_cmp <- t(apply(lineages, 1, function(l)
+        l == lineages[1, ]))
       rank_match <- ave(rowSums(lineage_cmp, na.rm = TRUE), d$taxon_num)
       rank_match_delta <- rank_match[1] - rank_match
       rank_mismatch <- ave(rowSums(!lineage_cmp, na.rm = TRUE), d$taxon_num)
-      if (any(!is_grp1 & abund_ratio < 8 & rank_mismatch < 2 & rank_match_delta < 2)) {
-        d$message[is_grp1] <- paste(
-          d$message[is_grp1],
-          'Related taxa in mix;'
-        )
+      if (any(!is_grp1 &
+              abund_ratio < 8 & rank_mismatch < 2 & rank_match_delta < 2)) {
+        d$message[is_grp1] <- paste(d$message[is_grp1], 'Related taxa in mix;')
       }
     }
     d
   })
-  
+
   propagate_data(
     seq_tab,
     extra_seq_cols = c(
       'matching_ranks',
       'mismatching_ranks',
       'taxon',
-      'short_lineage',
-      'message'
+      'short_lineage'
     )
   )
 }
 
-
-#' Check installed programs
-get_programs <- function(bin_dir='bin') {
-  required_programs <- c(seqtool='st', samtools='samtools', minimap2='minimap2', vsearch='vsearch')
-  out <- lapply(names(required_programs), function(program) {
-    bin_name <- required_programs[program]
-    if (bash_cmd_succeeds(c(bin_name, '--version'))) {
-      bin_name
-    } else if (bash_cmd_succeeds(c(file.path(bin_dir, bin_name), '--version'))) {
-      file.path(bin_dir, bin_name)
-    } else {
-      stop(
-        sprintf("The program '%s' was not found. ", bin_name),
-        "It needs to be installed either system-wide and visible to R (in $PATH), ",
-        "or installed in the 'bin' subdirectory. ",
-        "Consider installing by runing 'scripts/install-deps.sh' in the (Bash) console. ",
-        "For more information, see..."
-        # TODO: reference tutorial
-      )
-    }
-  })
-  names(out) = names(required_programs)
-  out
-}
-
-require_bash <- function() {
-  if (Sys.which('bash') == '') {
-    stop('The Bash shell is missing. On Windows, WSL2 is needed (https://learn.microsoft.com/en-us/windows/wsl/install)')
-  }
-}
-
-#' Run a command in Bash, which should work on Linux, OS-X and Windows WSL
-#' **Note**: assuming **no** spaces in arguments (no spaces in paths!)
-run_bash <- function(cmd, stdout = '', stderr = '', ...) {
-  cmd <- paste(cmd, collapse=' ')
-  print(cmd)
-  full_cmd <- paste0('set -euo pipefail; ', cmd)
-  rv <- system2('bash', c('-c', shQuote(full_cmd)), stdout = stdout, stderr = stderr, ...)
-  code <- if (isTRUE(stdout) || isTRUE(stderr)) {
-    attr(rv, 'status') %||% 0
-  } else {
-    rv
-  }
-  if (code != 0) {
-    stop('Command failed: ', cmd)
-  }
-  rv
-}
-
-bash_cmd_succeeds <- function(cmd) {
-  !is.null(tryCatch(run_bash(cmd, stdout = FALSE, stderr = FALSE), error=function(e) NULL))
-}
-
-
-process_parallel <- function(data, func, cores = 1, export = NULL) {
+process_parallel <- function(data,
+                             func,
+                             cores = 1,
+                             export = NULL) {
   if (cores > 1) {
     cl <- parallel::makeCluster(cores)
     if (!is.null(export))
       parallel::clusterExport(cl = cl, export)
-    tryCatch(parallel::parLapply(cl = cl, data, func),
-             finally = parallel::stopCluster(cl))
+    tryCatch(
+      parallel::parLapply(cl = cl, data, func),
+      finally = parallel::stopCluster(cl)
+    )
   } else {
     lapply(data, func)
   }
 }
-
-
-#### Setup globals ############################################
-
-.programs <- get_programs()
-
-###############################################################
-

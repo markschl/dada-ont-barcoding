@@ -10,13 +10,13 @@ seqtool="$4"
 shift 4
 demux_fq="$@"
 
-rm -f "$out"/*-xxxx.fastq.zst "$out"/*.fastq.gz
+rm -f "$out"/*--xxxx.fastq.zst "$out"/*.fastq.gz
 
 $seqtool filter "exp_err <= $exp_err && seqlen >= $min_len" $demux_fq |
-  $seqtool split --fq -po "$out/{attr(fi)}-xxxx.fastq.zst"
+  $seqtool split --fq -po "$out/{attr(fi)}--xxxx.fastq.zst"
 
 for f in "$out"/*-xxxx.fastq.zst; do
-  $seqtool split "$f" -po "$out/{attr(fi)}-{attr(ri)}.fastq.gz"
+  $seqtool split "$f" -po "$out/{attr(fi)}--{attr(ri)}.fastq.gz"
 done
 
-rm -f "$out"/*-xxxx.fastq.zst
+rm -f "$out"/*--xxxx.fastq.zst

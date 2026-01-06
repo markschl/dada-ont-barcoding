@@ -1,0 +1,35 @@
+Package: DadaNanoBC
+Type: Package
+Title:  DADA2-Based Pipeline for Infering DNA Barcodes from Nanopore Sequence Data 
+Version: 0.1.0
+Authors@R: c(
+    person(
+      "Markus", "Schlegel",
+      email = "markschl19@gmail.com",
+      role = c("aut", "cre")
+    )
+  )
+Description: This R-based pipeline infers specimen barcodes from Nanopore sequencing data with multiplexed samples.
+    It includes functions for automatic taxonomic assignments and taxonomy-based recognition of contaminants.
+License: MIT
+Encoding: UTF-8
+LazyData: true
+Suggests: 
+    knitr,
+    rmarkdown,
+Roxygen: list(markdown = TRUE)
+RoxygenNote: 7.3.2
+Imports:
+    dada2,
+    Biostrings,
+    DECIPHER (>= 2.0.0),
+    stringr,
+    rgbif (>= 3.7.0),
+    openxlsx2
+Depends:
+    R (>= 3.5)
+SystemRequirements:
+    Samtools (https://www.htslib.org),
+    Minimap2 (https://lh3.github.io/minimap2),
+    VSEARCH (https://github.com/torognes/vsearch),
+    Seqtool (https://github.com/markschl/seqtool)

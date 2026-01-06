@@ -1,20 +1,9 @@
 
-
-#' Auto-install packages required by the *clustering* pipeline
-install_cluster_deps <- function() {
-  p <- installed.packages()[,c('Package')]
-  install.packages(setdiff('BiocManager', p))
-  p.bioc = setdiff(c('Biostrings', 'dada2', 'DECIPHER'), p)
-  if (length(p.bioc) > 0)
-    BiocManager::install(p.bioc)
-}
-
-
 # for parallel::clusterExport
-.get_barcodes_export <- c(
-  'get_barcodes',
+.infer_barcodes_export <- c(
+  'infer_barcodes',
   'dada2_denoise',
-  'split_haplotypes',
+  'try_split_haplotypes',
   'cluster_fixed',
   'ambig_consensus',
   'run_bash',
@@ -31,8 +20,12 @@ install_cluster_deps <- function() {
 )
 
 
-#' Groups raw reads with DADA2 or fixed-threshold clustering to infer the correct
-#' barcode sequence.
+#' Infer barcode sequences from raw reads
+#'
+#' Applies a clustering workflow to the provided raw reads, based on
+#' DADA2 denoising and/or fixed-threshold clustering to infer the correct
+#' barcode sequence(s). Further groups the resulting sequences by putative
+#' taxon.
 #'
 #' @param fq demultiplexed FASTQ file
 #' @param dada_err output from `dada2::learnErrors()`
@@ -50,7 +43,7 @@ install_cluster_deps <- function() {
 #'    read depth is not larger than the given threshold. For large samples, it is
 #'    better to avoid multiple denoising rounds, and it is anyway likely that DADA2
 #'    will already find all sequence variants in the first round (with lowest OMEGA_A).
-#'    Haplotype variation with InDels may still be found with 'split_haplotypes',
+#'    Haplotype variation with InDels may still be found with 'try_split_haplotypes',
 #'    but not with DADA2 denoising at high sensitivity.
 #' @param dada_min_identical Minimum number of identical sequences required to do a
 #'    DADA2 denoising. Below this threshold, switch to simple fixed-threshold
@@ -101,63 +94,69 @@ install_cluster_deps <- function() {
 #'    support *both* of top two unique sequences in a sample in order to attempt
 #'    haplotype splitting (with these sequences as new references).
 #' @param max_split_ratio only split an ASV into 2 parental haplotypes if the ratio
-#'    of larger:smaller is not larger than `max_split_ratio`.
-#'    While the haplotypes might not always have an exact 1:1 ratio, this simple
+#'    of larger:smaller is up to `max_split_ratio`.
+#'    While the haplotypes might not always have an exact 1:1 ratio, this
 #'    constraint still enforces a certain balancing of haplotype abundances.
 #'    More unbalanced ratios are only possible if DADA2 is rerun with higher sensitivity
 #'    (see `dada_omega_a`).
 #'
-#' @value Returns a data frame with at least the following fields:
-#'    - `id`: Descriptive sequence ID, e.g.: 'taxon1_seq2'
-#'    - `full_id`: The ID used in the BAM and FASTA output files: `id` prefixed with `id_prefix`
-#'    - `taxon_num`: Nth (putative) taxon (integer; see also `taxa_cluster_threshold`)
-#'    - `sequence`: DADA2 ASV or most abundant unique split sequence
+#' @returns Returns a data frame with at least the following columns:
+#'    - *id*: Descriptive sequence ID, e.g.: 'taxon1_seq2'
+#'    - *full_id*: The ID used in the BAM and FASTA output files: *id* prefixed with `id_prefix`
+#'    - *taxon_num*: Nth (putative) taxon (integer; see also `taxa_cluster_threshold`)
+#'    - *sequence*: DADA2 ASV or most abundant unique split sequence
 #'       (`NA` in case of fixed-threshold clustering)
-#'    - `consensus`: consensus sequence of haplotype member sequences
-#'    - `consensus_ambigs`: number of ambiguous bases in the consensus (see `consensus_threshold`)
-#'    - `consensus_diffs`: edit distance between haplotype sequence
-#'       (ASV or dominant sequence used as reference after splitting an ASV or fixed-threshold clustering)
-#'    - `homopolymer_adjustments`: number of "fixed" homopolymer locations where the
-#'       repeat number was taken from the most abundant sequence instead of relying
-#'       on the consensus (which contained Ns).
-#'    - `abundance`: number of reads clustering with the given sequence
+#'    - *consensus*: consensus sequence of haplotype member sequences
+#'    - *consensus_ambigs*: number of ambiguous bases in the consensus (see `consensus_threshold`)
+#'    - *consensus_diffs*: edit distance between consensus and the representative sequence
+#'      (DADA2 ASV) or dominant sequence (after haplotype splitting/fixed-threshold clustering)
+#'    - *homopolymer_adjustments*: number of homopolymer locations that were "fixed"
+#'       by inferring the repeat number from the most abundant sequence instead of relying
+#'       on the consensus (containing Ns)
+#'    - *abundance*: number of reads clustering with the given sequence
 #'       (up to `max_sample_depth`)
-#'    - `n_mapped`: number of reads mapped to the barcode sequences
-#'       (usually the same or very similar to `abundance`)
-#'    - `n0` from DADA2: number of error-free reads (no substitutions, there may still be InDels)
-#'    - `max_identical`: max. number of identical reads
-#'    - `method`: method from which the haplotype emerged:
+#'    - *n_mapped*: number of reads mapped to the barcode sequences
+#'       (usually the same or very similar to *abundance*)
+#'    - *n0* from DADA2: number of error-free reads (no substitutions, there may still be InDels)
+#'    - *max_identical*: max. number of identical reads
+#'    - *method*: method from which the haplotype emerged:
 #'       one of 'dada', 'dada_split' (if haplotype splitting was done), 'fixed_cluster'
-get_barcodes <- function(fq,
-                         dada_err,
-                         alignment_prefix,
-                         id_prefix = NULL,
-                         tmp_dir = NULL,
-                         dada_omega_a = c(1e-20, 1e-10, 1e-2),
-                         omegaA_iter_threshold = 1000,
-                         dada_min_identical = 2,
-                         dada_min_n0 = 4,
-                         min_seq_abund = 3,
-                         max_sample_depth = 5000,
-                         consensus_max_depth = 3000,
-                         consensus_threshold = 0.65,
-                         consensus_by_qual = TRUE,
-                         homopoly_fix_min_ident = dada_min_identical,
-                         min_homopoly_len = 6,
-                         fixed_cluster_threshold = 0.97,
-                         taxa_cluster_threshold = fixed_cluster_threshold,
-                         cluster_single_linkage = TRUE,
-                         min_variant_freq = 0.2,
-                         split_min_identical = dada_min_identical,
-                         max_split_ratio = 3,
-                         cores = 1,
-                         minimap2 = 'minimap2',
-                         samtools = 'samtools',
-                         verbose = FALSE) {
-  # verbose = TRUE
+#'    - *is_rare*: `TRUE` if the relative frequency of a sequence within the same
+#'      putative taxon is below `min_variant_freq`
+#'
+#' @export
+infer_barcodes <- function(fq,
+                           dada_err,
+                           alignment_prefix,
+                           id_prefix = NULL,
+                           tmp_dir = NULL,
+                           dada_omega_a = c(1e-20, 1e-10, 1e-2),
+                           omegaA_iter_threshold = 1000,
+                           dada_min_identical = 2,
+                           dada_min_n0 = 4,
+                           min_seq_abund = 3,
+                           max_sample_depth = 5000,
+                           consensus_max_depth = 3000,
+                           consensus_threshold = 0.65,
+                           consensus_by_qual = TRUE,
+                           homopoly_fix_min_ident = dada_min_identical,
+                           min_homopoly_len = 6,
+                           fixed_cluster_threshold = 0.97,
+                           taxa_cluster_threshold = fixed_cluster_threshold,
+                           cluster_single_linkage = TRUE,
+                           min_variant_freq = 0.2,
+                           split_min_identical = dada_min_identical,
+                           max_split_ratio = 3,
+                           cores = 1,
+                           verbose = FALSE) {
+  # look for binaries
+  samtools <- get_program('samtools')
+  minimap2 <- get_program('minimap2')
+
+  # temporary directory
   tmp <- tempfile('cluster_ont_', tmpdir = tmp_dir %||% tempdir())
   dir.create(tmp, FALSE, TRUE)
-  
+
   # We will need the reads with quality scores below
   # cat('read/derep '); tictoc::tic()
   reads <- Biostrings::readQualityScaledDNAStringSet(fq, nrec = max_sample_depth)
@@ -167,11 +166,11 @@ get_barcodes <- function(fq,
     fq <- file.path(tmp, '_fq_limited.fastq')
     Biostrings::writeQualityScaledXStringSet(reads, fq)
   }
-  
+
   # DADA2: dereplicate once for multiple rounds of denoising
   dada_derep <- dada2::derepFastq(fq, qualityType = 'FastqQuality')
   # tictoc::toc()
-  
+
   d.prev = NULL
   for (dada_attempt in seq_along(dada_omega_a)) {
     round_prefix <- file.path(tmp, paste0('round_', dada_attempt))
@@ -191,7 +190,7 @@ get_barcodes <- function(fq,
 
     # Output should never be empty with DADA2 if DETECT_SINGLETONS is on
     stopifnot(nrow(d) > 0)
-    
+
     # low-coverage (and/or low-quality) sample?
     top_is_replicated <- d$max_identical[1] >= dada_min_identical &&
       d$n0[1] >= dada_min_n0
@@ -224,7 +223,7 @@ get_barcodes <- function(fq,
       d$seq_indices = split(seq_along(reads), cl)[as.character(d$id)]
       # tictoc::toc()
     }
-    
+
     # colum containing rarely-occurring messages
     d$message = ''
 
@@ -232,7 +231,7 @@ get_barcodes <- function(fq,
     # TODO: initial cluster abundance may differ from mapped read abundance,
     #   but we use this for filtering
     d <- d[d$abundance >= min_seq_abund, ]
-    
+
     if (nrow(d) > 0) {
       # Obtain consensus by mapping all ASV members against all ASV sequences
       # *Note*: reads not corrected by DADA2 are not mapped (their number depends on
@@ -262,12 +261,12 @@ get_barcodes <- function(fq,
       # "wrong" ASV (mapping not restricted) -> we use mapped reads
       # TODO: is this a good choice?
       stopifnot(names(d$consensus) == d$id)
-      
+
       if (top_is_replicated && any(d$consensus_ambigs > 0)) {
         # In case of ambiguities, try further splitting
         # into 2 haplotypes
         # cat('attempt split '); tictoc::tic()
-        d <- split_haplotypes(
+        d <- try_split_haplotypes(
           reads,
           d,
           prefix = round_prefix,
@@ -290,16 +289,16 @@ get_barcodes <- function(fq,
       d$taxon_num = cluster_fixed(d$consensus,
                                   taxa_cluster_threshold,
                                   single_linkage = TRUE)
-      
+
       # flag rare sequence variation
-      d$is_rare <- as.logical(ave(d$n_mapped, d$taxon_num, 
+      d$is_rare <- as.logical(ave(d$n_mapped, d$taxon_num,
                                   FUN=function(x) x / sum(x) < min_variant_freq))
-  
+
       # reorder taxon clusters by total abundance (keep members together)
       taxon_abund <- ave(ifelse(d$is_rare, 0, d$n_mapped), d$taxon_num, FUN=sum)
       d <- d[order(-taxon_abund, d$taxon_num, -d$n_mapped), ]
       d$taxon_num <- match(d$taxon_num, unique(d$taxon_num))
-      
+
       # determine number of haplotypes
       is_cl1 <- d$taxon_num == d$taxon_num[1] & !d$is_rare
       n_seqs <- sum(is_cl1)
@@ -326,7 +325,7 @@ get_barcodes <- function(fq,
       }
       stopifnot(length(unique(d$taxon_num[1:n_seqs])) == 1)
     }
-    
+
     # go back to previous clustering if:
     # - all sequences have too little reads (below the abundance threshold)
     # - the total reads included in all clusters are >2x lower than last time
@@ -344,27 +343,27 @@ get_barcodes <- function(fq,
     # stop with current clustering if there are no ambiguities in consensus of *top* taxon
     # OR the sample depth is large
     # (in which case it is unlikely that the haplotypes are not found with the initial omegaA)
-    if (!top_is_replicated || 
+    if (!top_is_replicated ||
         nrow(d) == 0 ||
         sum(d$consensus_ambigs[1:n_seqs]) == 0 ||
         dada_detail$n_reads >= omegaA_iter_threshold) {
       break
     }
     d.prev = d
-    
+
   } # end of loop
-  
+
   if (nrow(d) == 0) {
     unlink(tmp, TRUE)
-    return(NULL)
+    return(invisible(NULL))
   }
-  
+
   # Delete entries of 'sequence' that are not well supported by duplicates
   # (if fixed clustering was applied, all 'sequence' entries will be NA,
   # otherwise only rare ones)
   # *note* sequence is not directly used later, leaving it may cause confusion
   d$sequence[d$max_identical < dada_min_identical] = NA
-  
+
   # Assemble final BAM files:
   # - select clusters/haplotypes >= min_seq_abund (!d$is_rare)
   # - remap reads to consensus if it differs from the reference sequence
@@ -443,7 +442,7 @@ get_barcodes <- function(fq,
     }
   }
   # tictoc::toc()
-  
+
   # Finally: assign intuitively understandable names to sequences
   orig_id <- d$id
   d$id <- paste0('taxon', d$taxon_num)
@@ -460,7 +459,7 @@ get_barcodes <- function(fq,
     paste0(id_prefix, '_')
   }
   d$full_id <- paste0(id_prefix, d$id)
-  
+
   # Create BAM/FASTA output files (with IDs renamed in headers)
   if (!is.null(alignment_prefix)) {
     commented_id <- sprintf(
@@ -482,28 +481,35 @@ get_barcodes <- function(fq,
   # clean up
   d$seq_indices = d$top_uniques = NULL
   unlink(tmp, TRUE)
-  
+
   # calculate homopolymer stretch length
   l <- rle(utf8ToInt(d$consensus[1]))$lengths
   d$max_homopoly_len = max(l)
-  
+
   attributes(d)[names(dada_detail)] = dada_detail
   attr(d, 'omega_a') = dada_omega_a[dada_attempt]
   d
 }
 
 
-#' Map already known sequences or inconsistent ASV sequences against the consensus
+#' Compare consensus/ASV and known sequences
+#'
+#' Maps already known sequences or inconsistent ASV sequences against the consensus
 #' (also useful for manual inspection)
-#' 
+#'
+#' @param data frame returned by [infer_barcodes] (needs the *consensus* column)
+#'
+#' @returns
 #' Adds a `consensus_diffs` column to `d` (NA if not compared, Inf if not mapped
 #' due to too many mismatches)
+#'
+#' @export
 compare_seqs <- function(d,
                          bam_out = NULL,
                          tmp_dir = NULL,
-                         known_seq = NULL,
-                         minimap2 = 'minimap2',
-                         samtools = 'samtools') {
+                         known_seq = NULL) {
+  samtools <- get_program('samtools')
+  minimap2 <- get_program('minimap2')
   known_seq <- known_seq %||% NA
   stopifnot(length(known_seq) == 1)
   d$known_seq_diffs <- NA_integer_
@@ -527,6 +533,9 @@ compare_seqs <- function(d,
     ref_file <- tempfile('cmp_ref', tmp_dir, fileext = '.fasta')
     write_dna(map_seqs, seq_file)
     write_dna(setNames(d$consensus[sel], d$full_id[sel]), ref_file)
+    if (no_bam <- is.null(bam_out)) {
+      bam_out <- tempfile('cmp', tmp_dir, fileext = '.bam')
+    }
     cmd <- c(
       'scripts/map_ref_simple.sh',
       seq_file,
@@ -537,6 +546,8 @@ compare_seqs <- function(d,
       samtools
     )
     sam <- run_bash(cmd, stdout = TRUE)
+    if (no_bam)
+      file.remove(bam_out)
     sam <- if (length(sam) > 0) {
       sam <- read.delim(textConnection(sam), header = FALSE, colClasses = 'character')
       sam[sam[[1]] == 'known_sequence',]
@@ -561,7 +572,12 @@ compare_seqs <- function(d,
   d
 }
 
-
+#' Learn error rates
+#'
+#' Calls [dada2::learnErrors] with settings adjusted for Nanopore data and the clustering
+#' procedure ([infer_barcodes])
+#'
+#' @export
 dada_learn_errors <- function(fq_paths, omega_a = 1e-20, cores = 1, ...) {
   # To be sure we increase the NW alignment band size,
   # which is recommended for technologies with potentially some InDels (454, PacBio)
@@ -573,19 +589,30 @@ dada_learn_errors <- function(fq_paths, omega_a = 1e-20, cores = 1, ...) {
                      # this setting is currently hard-coded in denoise_dada2,
                      # so we also need it here
                      OMEGA_C = 1e-10,
-                     multithread = cores, 
+                     multithread = cores,
                      ...,
                      verbose = 0)
-  
+
 }
 
-#' Runs a DADA2 denoising on a FASTQ file, removes chimeras and and returns
+#' Run DADA2 denoising
+#'
+#' Runs DADA2 on a FASTQ file, removes chimeras and and returns
 #' an abundance-sorted data frame of ASVs with some additional information
 #'
-#' `singleton_threshold`: by default, singletons cannot form a new cluster, but
-#' with very low-depth samples (< 5 duplicates of any sequence), DETECT_SINGLETONS
-#' is turned on (see ?dada2::setDadaOpt). This increases sensitivity with InDel-rich
-#' Nanopore data.
+#' @param x FASTQ file path or *derep-class* object
+#' @param dada_err error information returned by [dada_learn_errors]
+#' @param max_members do random subsampling of overly large ASVs to
+#' the specified number of sequences
+#' @param singleton_threshold by default, singletons cannot form a new cluster,
+#' but for very low-depth samples (< N duplicates of any sequence),
+#' DETECT_SINGLETONS is turned on (see [dada2::setDadaOpt]).
+#' This increases sensitivity with InDel-rich Nanopore data and prevents that
+#' a large proportion of sequences are discarded.
+#' @param ... Arguments passed to [dada2::dada]
+#'
+#' @returns a data frame with the following columns:
+#' - (TODO: document)
 dada2_denoise <- function(x,
                           dada_err,
                           cores = 1,
@@ -613,18 +640,18 @@ dada2_denoise <- function(x,
     verbose = 0,
     ...
   )
-  
+
   d <- dd$clustering[, c('sequence', 'abundance', 'n0', 'nunq'), drop = FALSE]
   # assign an ID, as we will reorder/subset later, but need the cluster number
   d$id = 1:nrow(d)
-  
+
   # # Create Phred quality string with base 33 for ASV sequence
   # # TODO: should be fine like this?
   # # dada-class$quality has "average quality scores for each cluster (row) by position (col)"
   # d$quality = sapply(1:nrow(dd$clustering), function(i) {
   #   intToUtf8(33 + as.integer(round(dd$quality[i, 1:nchar(dd$clustering$sequence[i])])))
   # })
-  
+
   # Chimera check (we do this independently for each barcode)
   if (nrow(d) > 2) {
     # create a mini count table for this sample (normally very few ASVs)
@@ -636,17 +663,17 @@ dada2_denoise <- function(x,
     bim <- dada2::isBimeraDenovo(st, multithread = cores)
     d <- d[!bim, ]
   }
-  
+
   # Sort by decreasing abundance
   d <- d[order(-d$abundance), ]
-  
+
   # Remember the read indices for each cluster in the FASTQ file, used later in ambig_consensus()
   stopifnot(length(dd$map) == length(derep$uniques))
   # ASV cluster ID for *all* (non-dereplicated) input sequences (same order)
   cl <- dd$map[derep$map]
   cl <- split(seq_along(cl), cl)
   d$seq_indices = cl[as.character(d$id)]
-  
+
   # In addition, remember the two most abundant sequences, used later for haplotype splitting
   d$top_uniques = lapply(d$seq_indices, function(i) {
     if (length(i) > max_members) {
@@ -657,15 +684,16 @@ dada2_denoise <- function(x,
     i <- head(order(-uniq_freq), 2)
     setNames(uniq_freq[i], names(derep$uniques)[i])
   })
-  
+
   # max. number of identical sequences (usually identical to inferred ASV sequence)
   d$max_identical = sapply(d$top_uniques, max)
-  
+
   # attach more information
   attr(d, 'n_reads') = length(derep$map)
   attr(d, 'n_singletons') = sum(tabulate(derep$map) == 1)
   d
 }
+
 
 #' Attempts splitting sequence cluster into two haplotypes.
 #' Requires the output of dada2_denoise and ambig_consensus,
@@ -673,26 +701,28 @@ dada2_denoise <- function(x,
 #' - id
 #' - top_uniques
 #' - consensus_ambigs
-#' 
+#'
 #' Splitting is done if the sum of the consensus ambiguities of the two resulting
 #' sequence variants is smaller than the number of consensus ambiguities of the parent.
 #'
 #' Overwrites the existing BAM files and FASTA references in 'prefix'.
-split_haplotypes <- function(reads,
-                            d,
-                            prefix,
-                            max_depth = 5000,
-                            min_identical = 2,
-                            max_ratio = 3,
-                            fast = FALSE,
-                            cores = 1,
-                            ...,
-                            samtools = 'samtools',
-                            minimap2 = 'minimap2',
-                            verbose = FALSE) {
+try_split_haplotypes <- function(reads,
+                                 d,
+                                 prefix,
+                                 max_depth = 5000,
+                                 min_identical = 2,
+                                 max_ratio = 3,
+                                 fast = FALSE,
+                                 cores = 1,
+                                 ...,
+                                 samtools = 'samtools',
+                                 minimap2 = 'minimap2',
+                                 verbose = FALSE) {
+
+
 
   d$do_split = FALSE
-  
+
   # for which ASVs should we *attempt* splitting?
   check_split <- d$consensus_ambigs > 0 &
     # at least min_identical uniques are required for both resulting haplotypes
@@ -705,7 +735,7 @@ split_haplotypes <- function(reads,
     sapply(d$top_uniques, function(x)
       max(x) / min(x)) <= 2.5 * max_ratio
   stopifnot(!is.na(check_split))
-  
+
   if (any(check_split)) {
     # attempt splitting for those ambiguous ASVs that pass the thresholds
     # for each ASV, select the two top unique sequences as references for mapping + consensus
@@ -748,7 +778,7 @@ split_haplotypes <- function(reads,
           sprintf(
             ' split %s %s: has cons: %s | ambigs %d -> %d/%d = %d | uniq %d:%d | hap %d:%d | ratio=%.2f\n',
             d.s$id,
-            is_better, 
+            is_better,
             !any(is.na(cons$consensus)),
             d.s$consensus_ambigs,
             cons$consensus_ambigs[1],
@@ -782,7 +812,7 @@ split_haplotypes <- function(reads,
         # obtaining seq_indices is a bit more involved, but usually
         # the number of reads is not too large here and this should be fast
         # (DADA2 will separate haplotypes well given enough read depth,
-        # so split_haplotypes will not be required)
+        # so try_split_haplotypes will not be required)
         read_map <- bam_to_map(paste0(prefix_split, '.bam'), samtools = samtools)
         read_ids <- sapply(strsplit(names(reads), ' ', fixed = TRUE), '[', 1)
         d2$seq_indices = split(match(names(read_map), read_ids), read_map)[row.names(cons)]
@@ -793,9 +823,9 @@ split_haplotypes <- function(reads,
         d2
       } else {
         d.s
-      }  
+      }
     }))
-    
+
     stopifnot(nrow(d) == length(check_split))
     d <- rbind(
       d[!check_split,],
@@ -826,12 +856,12 @@ split_haplotypes <- function(reads,
       }
     }
   }
-  
+
   d$do_split = NULL
   d
 }
 
-#' Merges selected IDs from multiple BAM files
+#' Merges multiple BAM files, optionally selecting reference IDs from them
 subset_combine_bam <- function(out_prefix,
                                sel_list,
                                cores = 1,
@@ -862,9 +892,10 @@ subset_combine_bam <- function(out_prefix,
     }
     return()
   }
-  
+
   # merge BAM
   bam_out <- paste0(out_prefix, '.bam')
+  outfiles <- c(bam = bam_out)
   msg <- run_bash(
     c(
       samtools,
@@ -886,6 +917,7 @@ subset_combine_bam <- function(out_prefix,
         }
       })
     ),
+    stderr = TRUE,
     stdout = TRUE
   )
   stopifnot(!grepl('invalid region or unknown reference', msg))
@@ -911,27 +943,30 @@ subset_combine_bam <- function(out_prefix,
   }
   if (do_index) {
     run_bash(c(samtools, 'index', bam_out))
+    outfiles['bam.bai'] <- paste0(out_prefix, '.bam.bai')
   }
   # merge references
   if (write_refs) {
     ref_out <- paste0(out_prefix, '.fasta')
     refs <- do.call(c, lapply(sel_list, function(x) {
-      r <- Biostrings::readDNAStringSet(paste0(x[[1]], '.fasta'))
+      r <- read_dna(paste0(x[[1]], '.fasta'))
       if (length(x) == 2) {
         r <- r[match(x[[2]], gsub(' .*', '', names(r)))]
       }
       r
     }))
-    Biostrings::writeXStringSet(refs, ref_out)
+    write_dna(refs, ref_out)
+    outfiles['fasta'] <- paste0(out_prefix, '.fasta')
   }
+  outfiles
 }
 
 #' Run 'samtools reheader' to change the reference names.
 #' Also allows removing \@PG entries, which may contain some file paths
 #' from the machine on which the clustering was run.
-rename_bam_refs <- function(prefix, 
+rename_bam_refs <- function(prefix,
                             out_prefix,
-                            id_map, 
+                            id_map,
                             ref_seq = NULL,
                             do_index = TRUE,
                             remove_pg = TRUE,
@@ -960,8 +995,7 @@ rename_bam_refs <- function(prefix,
     stopifnot(all(names(ref_seq) %in% names(id_map)))
     ref_seq <- ref_seq[names(id_map)]
     names(ref_seq) <- id_map
-    Biostrings::writeXStringSet(Biostrings::DNAStringSet(ref_seq),
-                                paste0(out_prefix, '.fasta'))
+    write_dna(ref_seq, paste0(out_prefix, '.fasta'))
   }
   if (do_index) {
     invisible(run_bash(c(samtools, 'index', bam_out)))
@@ -984,9 +1018,9 @@ ambig_consensus <- function(seqs,
   reads_file <- paste0(out_prefix, '_seqs.fastq')
   stopifnot(!is.null(names(ref_seq)))
   stopifnot(!is.na(names(ref_seq)))
-  Biostrings::writeXStringSet(Biostrings::DNAStringSet(ref_seq), ref_file)
+  write_dna(ref_seq, ref_file)
   Biostrings::writeQualityScaledXStringSet(seqs, reads_file)
-  
+
   # do mapping -> consensus
   cmd <- c(
     'scripts/ref_consensus.sh',
@@ -1011,7 +1045,7 @@ ambig_consensus <- function(seqs,
       NULL
     }
   )
-  
+
   # read output files
   stats <- run_bash(cmd, stdout = TRUE)
   cons_out <- paste0(out_prefix, '_consensus.fasta')
@@ -1019,13 +1053,13 @@ ambig_consensus <- function(seqs,
   # invisible(file.remove(ref_file))
   out <- data.frame(
     row.names = names(ref_seq),
-    consensus = as.character(Biostrings::readDNAStringSet(cons_out))[names(ref_seq)],
+    consensus = as.character(read_dna(cons_out))[names(ref_seq)],
     n_mapped = parse_idxstats(stats)[names(ref_seq)],
     homopolymer_adjustments = 0,
     consensus_diffs = 0
   )
   invisible(file.remove(cons_out))
-  
+
   # compare reference with consensus and fix homopolymers
   different <- ref_seq != out$consensus
   if (any(different)) {
@@ -1033,10 +1067,9 @@ ambig_consensus <- function(seqs,
     stopifnot(length(homopoly_fix) %in% c(1, length(different)))
     homopoly_fix <- different & homopoly_fix
     if (any(homopoly_fix)) {
-      aln <- pairwise_align(out$consensus[homopoly_fix], 
-                            ref_seq[homopoly_fix], 
-                            type = 'sequence')
-      res <- fix_homopolymers(aln, min_homopoly_len = min_homopoly_len)
+      res <- fix_homopolymers(out$consensus[homopoly_fix],
+                              ref_seq[homopoly_fix],
+                              min_homopoly_len = min_homopoly_len)
       cons_ <- out$consensus
       out[homopoly_fix, c('consensus', 'homopolymer_adjustments')] <- res[, c('consensus', 'n_adjusted')]
       adjusted <- out$homopolymer_adjustments > 0
@@ -1057,9 +1090,9 @@ ambig_consensus <- function(seqs,
       stopifnot(is.finite(out$consensus_diffs))
     }
   }
-  
+
   out$consensus_ambigs <- n_ambigs(out$consensus)
-  
+
   out
 }
 
@@ -1067,47 +1100,54 @@ ambig_consensus <- function(seqs,
 #' Resolve N-ambiguities in the consensus if surrounded by a homopolymer stretch,
 #' replacing them with the corresponding reference sequence
 #' (which is assumed to be the most likely true sequence)
-#' 
+#'
+#' @param cons_seq the consensus
+#' @param ref_seq the reference sequence (there should be some confidence
+#' that it is correct)
+#' @param min_homopoly_len minimum homopolymer length to check and fix
+#'
+#' @returns data frame(consensus, n_adjusted = # "fixed" homopolymers)
+#'
+#' @details
 #' Ns are usually found on the left side (or near it), as minimap2 tends to
 #' left-align gaps, and if there is an ambiguous situation (base + gap), the
 #' consensus becomes an N.
-#' 
-#' The input should be the result of
-#' DECIPHER::alignPairs(consensus, reference) with type = 'sequence' or 'both'
 #'
-#' The first non-N base downstream (right) of the first N is assumed to be
-#' the repeated base.
-#' Then, all N's are set to this base, and the range of the homopolymer is
-#' determined.
-fix_homopolymers <- function(cons_ref_alignment, min_homopoly_len = 6) {
-  #' function for finding homopolymer runs either at a specific position
-  #' or the longest run
-  find_run <- function(x, values, at = NULL) {
+#' 1. A consensus/reference pairwise alignment is done
+#' 2. The leftmost N is identified
+#' 3. The first non-N base downstream (right) of this N is assumed to be
+#'    the repeated base (likely true due to left-aligned gaps)
+#' 4. The longest stretch of the given base/N/gaps is searched in the aligned
+#'    consensus
+#' 5. The given range is checked in the aligned reference: if it is only composed
+#'    of the given base and gaps, then the aligned consensus sequence is replaced
+#'    with the aligned reference
+#' 6. Go back to 2., searching for the next N (stop if none)
+#' 7. Remove all gaps from the consensus and return this sequence
+#'
+#' @export
+fix_homopolymers <- function(cons_seq, ref_seq, min_homopoly_len = 6) {
+  # function for finding homopolymer runs at a specific position
+  find_run <- function(x, values, at) {
     r <- rle(values)
     cum_lengths <- cumsum(r$lengths)
-    j <- if (is.null(at)) {
-      # find longest stretch of x
-      is_x <- r$values == x
-      which(is_x & r$lengths == max(r$lengths[is_x]))[1]
-    } else {
-      # find stretch at given position
-      which(cum_lengths >= at)[1]
-    }
+    j <- which(cum_lengths >= at)[1]
     stopifnot(r$values[j] == x)
     c(
       if (j == 1) 1 else cum_lengths[j-1] + 1,
       cum_lengths[j]
     )
   }
-  
-  aln_consensus <- as.character(cons_ref_alignment$PatternAligned)
-  aln_ref <- as.character(cons_ref_alignment$SubjectAligned)
+
+  aln <- pairwise_align(cons_seq, ref_seq, type = 'sequence')
+  aln_consensus <- as.character(aln$PatternAligned)
+  aln_ref <- as.character(aln$SubjectAligned)
   # find putative homopolymer runs containing 'N' ambiguities
   # (N can be base + gap)
   n_ascii <- 78 # utf8ToInt('N')
   gap_ascii <- 45 # utf8ToInt('-')
   dna_ascii <- c(65, 67, 71, 84) # utf8ToInt('ACGT')
-  res <- do.call(rbind, lapply(seq_len(length(aln_consensus)), function(i) {
+  do.call(rbind, lapply(seq_len(length(aln_consensus)), function(i) {
     # cat(i, ' ')
     cons <- utf8ToInt(aln_consensus[i])
     ref <- utf8ToInt(aln_ref[i])
@@ -1139,19 +1179,16 @@ fix_homopolymers <- function(cons_ref_alignment, min_homopoly_len = 6) {
         stopifnot(all(cons_adj[rng[1]:rng[2]] == sel_base_ascii))
         # Find homopolymer range of given base in the *reference*
         # (within the range determined from the consensus).
-        # The final homopolymer range can thus be smaller, but never larger
-        # than in the consensus.
+        # The final homopolymer range can thus be smaller (due to gaps)
+        # but never larger than in the consensus
         ref_sub <- ref[rng[1]:rng[2]]
-        ref_adj <- ref_sub
-        ref_adj[ref_adj == gap_ascii] <- sel_base_ascii
-        ref_rng <- find_run(sel_base_ascii, ref_adj)
-        run_length <- sum(ref_sub[ref_rng[1]:ref_rng[2]] == sel_base_ascii)
-        if (run_length >= min_homopoly_len) {
+        n_sel_base <- sum(ref_sub == sel_base_ascii)
+        # the reference sequence must only have the given base or gaps at this location
+        is_pure <- all(ref_sub == sel_base_ascii | ref_sub == gap_ascii)
+        if (is_pure && n_sel_base >= min_homopoly_len) {
           stopifnot(cons[rng[1] + (ref_rng[1]:ref_rng[2]) - 1] %in% c(n_ascii, gap_ascii, sel_base_ascii))
-          cons[rng[1] + (ref_rng[1] : ref_rng[2]) - 1] <- c(
-            rep(gap_ascii, check_length - run_length),
-            rep(sel_base_ascii, run_length)
-          )
+          stopifnot(length(cons[rng[1]:rng[2]]) == length(ref_sub))
+          cons[rng[1]:rng[2]] <- ref_sub
           n_adjusted <- n_adjusted + 1
         }
       }
@@ -1189,6 +1226,8 @@ bam_to_map <- function(bam_file, samtools = 'samtools') {
 }
 
 #' Fixed-threshold clustering (single-linkage by default)
+#'
+#' The clustering is done with [DECIPHER::Clusterize].
 cluster_fixed <- function(seqs,
                          threshold,
                          min_coverage = 0.8,

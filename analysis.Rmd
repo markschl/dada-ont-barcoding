@@ -36,7 +36,7 @@ Run: *`r config$analysis_dir`*
 
 Date: *`r format(Sys.time(), '%d %B, %Y')`*
 
-Analyzed with [dada-ont-barcoding](https://github.com/markschl/dada-ont-barcoding), version: **TODO**
+Analyzed with *[DadaNanoBC](https://github.com/markschl/DadaNanoBC) v`r as.character(packageVersion('DadaNanoBC'))`*
 
 
 ```{r load-software, message=F, warning=F}
@@ -88,7 +88,7 @@ theme_set(ggplot_theme())
 4)  Compare with already known sequences (if present)
 5)  Export summary table, which can be further manually curated
 
-See [documentation](https://markschl.github.io/dada-ont-barcoding) for more details.
+See [documentation](https://markschl.github.io/DadaNanoBC) for more details.
 
 # Input/configuration
 
@@ -159,10 +159,10 @@ idxdist.summary
 
 ```{r}
 overall_min_idx_dist = min(idxdist.summary$`min. index dist.`)
-stopifnot((config$demultiplex$idx_max_diffs %||% 0) < overall_min_idx_dist)
+stopifnot(config$demultiplex$idx_max_diffs < overall_min_idx_dist)
 ```
 
-The forward and reverse sample indexes have a length of `r paste(unique(idxdist.summary[['index length']]), collapse=' / ')` bp and a minimum edit distance of `r min(idxdist.summary[['min. index dist.']])` (see also Figure \@ref(fig:idxdist)). The maximum allowed number of sequencing errors in barcodes is `r (config$demultiplex$idx_max_diffs %||% 0)`. This value should always be *smaller than the minimum distance* between any sample index).
+The forward and reverse sample indexes have a length of `r paste(unique(idxdist.summary[['index length']]), collapse=' / ')` bp and a minimum edit distance of `r min(idxdist.summary[['min. index dist.']])` (see also Figure \@ref(fig:idxdist)). The maximum allowed number of sequencing errors in barcodes is `r (config$demultiplex$idx_max_diffs)`. This value should always be *smaller than the minimum distance* between any sample index).
 
 > *Note*: Using a lower `idx_max_diffs` threshold reduces false assignments of reads to samples, but also leads to less sequences being included in the analysis. On the other hand, an increased error tolerance increases the read count. You can check the unused barcode combinations (*unspecific* in below figures) for any "background noise".
 
@@ -183,8 +183,8 @@ ggplot(idxdist, aes(dist)) +
 
 Steps:
 
--   Search for the primers (up to `r 100 * (config$demultiplex$primer_max_err %||% 0.2)` % error rate)
--   Search for the sample indexes next to the primers (max. `r (config$demultiplex$idx_max_diffs %||% 0)` differences)
+-   Search for the primers (up to `r 100 * config$demultiplex$primer_max_err` % error rate)
+-   Search for the sample indexes next to the primers (max. `r config$demultiplex$idx_max_diffs` differences)
 -   Trim primers, filter by quality (max. `r config$demux$error_threshold` expected errors) and distribute into different files by barcode (de-multiplex)
 
 ## Primer trimming
@@ -280,7 +280,7 @@ ggplot(d, aes(length, fill=category, color=category)) +
 
 The quality filtering should remove highly errorneous sequencing reads, while still retaining enough reads for inferring the barcode sequences.
 
-According to Figure \@ref(fig:mismatch-stats), reads with many primer or sample index mismatches also tend to have lower quality scores. The default threshold of *2.5 expected errors per read* can be tweaked. With the current settings, reads with \>`r config$demux$error_threshold` errors and reads shorter than `r (config$demultiplex$min_read_length %||% 50)` bp (`min_read_length` setting) are discarded. Figure \@ref(fig:readstats) may also help guiding the selection of the threshold.
+According to Figure \@ref(fig:mismatch-stats), reads with many primer or sample index mismatches also tend to have lower quality scores. The default threshold of *2.5 expected errors per read* can be tweaked. With the current settings, reads with \>`r config$demux$error_threshold` errors and reads shorter than `r config$demultiplex$min_read_length` bp (`min_read_length` setting) are discarded. Figure \@ref(fig:readstats) may also help guiding the selection of the threshold.
 
 (ref:mismatch-stats) Mismatch statistics/quality statistics, based on the quality scores from the base-called FASTQ file. (a) Comparison of index/primer mismatches, colored by average read quality; (b/c) Distribution of expected errors per read, colored by primer/index mismatches.
 
@@ -389,7 +389,7 @@ The DADA2 denoising method relies on presence of **at least a few error-free rea
 
 [^1]: Singletons are sequences only present *once* in a sample (non-duplicated)
 
-The barcode clustering procedure automatically checks the read duplication, and switches from DADA2 denoising to fixed-threshold clustering if there are \< `r config$cluster$dada_min_identical %||% 2` identical sequences or \< `r config$cluster$dada_min_n0 %||% 4` sequences without substitution errors (Figure \@ref(fig:cluster-validation)b and c; *cluster_fixed* method). The thresholds can be changed in `config.yaml` (`dada_min_identical` and `dada_min_n0`). In some cases, DADA2-denoised ASVs can be further split into two more or less equally abundant haplotypes (*dada_split* method in Figure \@ref(fig:cluster-validation)).
+The barcode clustering procedure automatically checks the read duplication, and switches from DADA2 denoising to fixed-threshold clustering if there are \< `r config$cluster$dada_min_identical` identical sequences or \< `r config$cluster$dada_min_n0` sequences without substitution errors (Figure \@ref(fig:cluster-validation)b and c; *cluster_fixed* method). The thresholds can be changed in `config.yaml` (`dada_min_identical` and `dada_min_n0`). In some cases, DADA2-denoised ASVs can be further split into two more or less equally abundant haplotypes (*dada_split* method in Figure \@ref(fig:cluster-validation)).
 
 ```{r}
 seq_tab <- tar_read(cluster_seqtab_combined)
@@ -478,7 +478,7 @@ Ambiguous bases in the reported sequence mostly appear in low-depth samples, whe
 
 In rare cases, the alignment consensus does not match the inferred DADA2 ASV sequence (Figure \@ref(fig:cluster-validation2)c/d). These barcodes will have a *consensus-diffs* issue flag in the report, and the consensus sequence is reported (may be inspected manually, but usually the consensus should make sense).
 
-(ref:cluster-validation2) (a/b) Distribution of the ambiguous base count in the top consensus sequence (\< `r (config$cluster$consensus_threshold %||% 0.65) * 100` % in alignment having the same base). (c/d) Number of mismatches between the DADA2 ASV and the consensus sequence. The vertical line indicates a sequencing depth threshold of `r config$report$low_abund_threshold` reads (`low_abund_threshold` in `config.yaml`).
+(ref:cluster-validation2) (a/b) Distribution of the ambiguous base count in the top consensus sequence (\< `r config$cluster$consensus_threshold * 100` % in alignment having the same base). (c/d) Number of mismatches between the DADA2 ASV and the consensus sequence. The vertical line indicates a sequencing depth threshold of `r config$report$low_abund_threshold` reads (`low_abund_threshold` in `config.yaml`).
 
 ```{r cluster-validation2, fig.width=6.7, fig.height=4.5, message=FALSE, warning=FALSE, fig.cap='(ref:cluster-validation2)'}
 group_limit = function(x, lim) factor(
@@ -527,7 +527,7 @@ mdepth = ggplot(d_dada, aes(n_reads, cons_diffs_,
 
 # Haplotypes / polymorphism
 
-The clustering procedure usually yields 1-2 abundant haplotype sequences from the target organism, and few rare/unspecific barcode sequences (Figure \@ref(fig:polymorphisms)a/b). In addition, there may be additional copies of the target barcode in the genomes. A fixed-threshold clustering at a similarity threshold of `r (config$cluster$fixed_cluster_threshold %||% 0.97) * 100` % is done to distinguish the target organism from other organisms, which may also be present in the mix (e.g. contamination). If DNA was extracted from the tissue of multiple individuals, there might also be more than the two parental haplotypes. Polymorphisms with \< `r (config$cluster$min_variant_freq %||% 0.2) * 100` % frequency in an organism group are removed.
+The clustering procedure usually yields 1-2 abundant haplotype sequences from the target organism, and few rare/unspecific barcode sequences (Figure \@ref(fig:polymorphisms)a/b). In addition, there may be additional copies of the target barcode in the genomes. A fixed-threshold clustering at a similarity threshold of `r config$cluster$fixed_cluster_threshold * 100` % is done to distinguish the target organism from other organisms, which may also be present in the mix (e.g. contamination). If DNA was extracted from the tissue of multiple individuals, there might also be more than the two parental haplotypes. Polymorphisms with \< `r config$cluster$min_variant_freq * 100` % frequency in an organism group are removed.
 
 The proportion of reads belonging to the final (probably specific) clusters is usually 50-100% at read depths \> 1000, but decreases with lower depths (Figure \@ref(fig:polymorphisms)c). Reasons can be sequencing errors (also in the sample indexes), as well as contamination.
 
@@ -567,7 +567,7 @@ hhist + hdepth +
 
 # Taxonomic assignments
 
-Taxonomic names are assigned with the the SINTAX algorithm using a bootstrap confidence threshold of `r (config$taxonomy$confidence_threshold %||% 0.8) * 100` %.
+Taxonomic names are assigned with the the SINTAX algorithm using a bootstrap confidence threshold of `r config$taxonomy$confidence_threshold * 100` %.
 
 > **Caution**: these automatic sequence-based assignments are not guaranteed to be correct, it is recommended to further validate them, e.g. using BLAST.
 
@@ -579,7 +579,7 @@ Second, morphological identifications (morpho_taxon column in metadata) are comp
 seq_tab <- tar_read(taxonomy)$seq_tab
 ```
 
-A barcode sequence (more precisely, a `r (opts$cluster$cluster_threshold %||% 0.97) * 100` % group) is *automatically* classified as contaminant if there exists another sequence (group), which has a better taxonomic overlap with the morphological identification. The overlap is assumed to be better if (i) there exists a less abundant taxon with the correct kingdom, or (ii) a taxon has has at least *three more consistent (matching) taxonomic ranks* in the GBIF lineage compared to the top taxon (undefined ranks excluded from the comparison). Figure \@ref(fig:tax-overlap) visualizes the final taxonomic assignments. The taxonomic overlap (Figure \@ref(fig:tax-overlap)b) should mostly be near 100% (bars on right side).
+A barcode sequence (more precisely, a `r opts$cluster$cluster_threshold * 100` % group) is *automatically* classified as contaminant if there exists another sequence (group), which has a better taxonomic overlap with the morphological identification. The overlap is assumed to be better if (i) there exists a less abundant taxon with the correct kingdom, or (ii) a taxon has has at least *`r config$taxonomy$contam_rank_delta` more consistent (matching) taxonomic ranks* in the GBIF lineage compared to the top taxon (undefined ranks excluded from the comparison). Figure \@ref(fig:tax-overlap) visualizes the final taxonomic assignments. The taxonomic overlap (Figure \@ref(fig:tax-overlap)b) should mostly be near 100% (bars on right side).
 
 > **note**: the ranking may sometimes be incorrect, or if contaminants are too related to the target taxon, they may not automatically be flagged; a **manual investigation of the report** is highly recommended.
 

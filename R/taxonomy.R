@@ -1,12 +1,4 @@
 
-install_taxonomy_deps <- function() {
-  p <- installed.packages()[,c('Package')]
-  p <- setdiff(c('rgbif', 'stringr'), p)
-  if (length(p) > 0) {
-    install.packages(p)
-  }
-}
-
 .valid_ranks <- c('domain',
                   'kingdom',
                   'phylum',
@@ -16,13 +8,48 @@ install_taxonomy_deps <- function() {
                   'genus',
                   'species')
 
-
-load_taxdb <- function(db_url, db_type, db_file, db_tax_url=NULL, ...) {
-  stopifnot(db_type %in% c('unite', 'qiime_fasta', 'qiime_qza'))
+#' Download a taxonomic database and save it in UTAX format
+#'
+#' @param db_url Character vector with one or more file URLs; sequences from all
+#'   URLs are combined into one final database.
+#' @param db_type Database type (character) (see details)
+#' @param db_file Output file (will be GZIPped FASTA, `.fasta.gz`)
+#' @param db_tax_url (optional) URL(s) pointing to file(s) containing the taxonomy for the
+#'   sequences in the files at `db_url` (currently implemented for *qiime_qza* format)
+#'
+#' @details
+#'
+#' Currently, three database types are implemented (more may follow):
+#'
+#' - *"unite"*: UNITE ITS database (https://unite.ut.ee/repository.php):
+#'   choose a dataset (e.g. [all Eukaryotes](https://doi.plutof.ut.ee/doi/10.15156/BIO/3301243)),
+#'   click on the file at *Downloads* and copy the actual file URL once the file
+#'   starts downloading in the browser.
+#'   The SH sequence set with a *dynamic clustering threshold* is chosen from the archive
+#'   and imported.
+#' - *"qiime_fasta"*: FASTA file with lineages in headers in the form
+#'   `<seqid> rank1__name; rank2__name; ...`
+#'   whereby `rank1` and `rank2` are one-letter codes such as `k` (for kingdom), `g` (for genus), etc.
+#'   If only sequences are in the file, specify the URL of a tab-delimited file
+#'   mapping sequence IDs to lineages.
+#'   One example of database providing such files [GTDB](https://gtdb.ecogenomic.org)
+#'   (e.g. [here](https://data.gtdb.aau.ecogenomic.org/releases/release226/226.0/genomic_files_reps))
+#' - *"qiime_qza"*: [QIIME2 QZA](https://amplicon-docs.qiime2.org/en/stable/explanations/archives.html) format,
+#'   which is essentially a ZIP file containing a *qiime_fasta*-formatted FASTA
+#'   file, while another QZA file should contain the tab-delimited taxonomy (provide with `db_tax_url`).
+#'
+#' This function may be expanded and made more flexible in the future
+#'
+#' @export
+load_taxdb <- function(db_url,
+                       db_type = c('unite', 'qiime_fasta', 'qiime_qza'),
+                       db_file, db_tax_url=NULL, ...) {
+  db_type <- match.arg(db_type)
   load_fn <- get(paste0('load_', db_type))
   load_fn(db_url, db_file, tax_urls=db_tax_url)
 }
 
+#' @export
 load_unite <- function(url, outfile, ...) {
   stopifnot(length(url) == 1)  # multiple files not implemented
   download.file(url, 'unite.tar.gz', timeout = 1200, quiet = TRUE)
@@ -31,33 +58,35 @@ load_unite <- function(url, outfile, ...) {
   fasta <- fasta[grepl('dynamic', fasta)][1]
   tax <- list.files('unite', pattern = '.txt')
   tax <- tax[grepl('dynamic', tax)]
-  seqs <- Biostrings::readDNAStringSet(file.path('unite', fasta))
+  seqs <- read_dna(file.path('unite', fasta))
   tax <- read.delim(file.path('unite', tax))
   tax <- setNames(tax[,2], tax[,1])
   tax <- tax[names(seqs)]
   tax <- gsub(';sh__.+', '', tax)
   stopifnot(!is.na(tax))
-  write_utax(seqs, outfile, taxonomy=tax, ...)
+  convert_write_utax(seqs, outfile, taxonomy=tax, ...)
   unlink('unite', TRUE)
   invisible(file.remove('unite.tar.gz'))
 }
 
+#' @export
 load_qiime_fasta <- function(urls, outfile, tax_urls=NULL, ...) {
   stopifnot(is.null(tax_urls))  # taxonomy expected in FASTA file
   dbfile <- 'taxdb_tmp.gz'
   seqs <- do.call(c, lapply(urls, function(url) {
     download.file(url, dbfile, timeout = 600, quiet = TRUE)
-    Biostrings::readDNAStringSet(dbfile)
+    read_dna(dbfile)
   }))
-  write_utax(seqs, outfile, ...)
+  convert_write_utax(seqs, outfile, ...)
   invisible(file.remove(dbfile))
 }
 
+#' @export
 load_qiime_qza <- function(urls, outfile, tax_urls=NULL, ...) {
   db_dir <- 'taxdb_tmp'
   taxdb_dir <- 'taxdb_tmp_tax'
   seqs <- do.call(c, lapply(urls, function(url) {
-    Biostrings::readDNAStringSet(load_qza(url, db_dir, 'dna-sequences.fasta'))
+    read_dna(load_qza(url, db_dir, 'dna-sequences.fasta'))
   }))
   taxonomy <- if (!is.null(tax_urls)) {
     tax <- do.call(rbind, lapply(tax_urls, function(url) {
@@ -70,7 +99,7 @@ load_qiime_qza <- function(urls, outfile, tax_urls=NULL, ...) {
   } else {
     NULL
   }
-  write_utax(seqs, outfile, taxonomy=taxonomy, ...)
+  convert_write_utax(seqs, outfile, taxonomy=taxonomy, ...)
   unlink(db_dir, TRUE)
   if (!is.null(tax_url)) {
     unlink(taxdb_dir, TRUE)
@@ -87,14 +116,19 @@ load_qza <- function(url, outdir, fname) {
   file.path(outdir, list.files(outdir)[1], 'data', fname)
 }
 
-write_utax <- function(seqs,
-                       outfile,
-                       taxonomy = NULL,
-                       unknown_pat = '(undefined|unknown|incertae[_ ]sedis)',
-                       sp_pat = r'{[ _]+(sp|spec)\.?$}',
-                       # by default, we require at least an ~order name
-                       required_ranks = 4,
-                       ...) {
+
+#' Convert QIIME-style lineages in sequence names (separated from sequence IDs by space)
+#' to UTAX-style taxonomic lineages
+#'
+#' @export
+convert_utax <- function(seqs,
+                         taxonomy = NULL,
+                         unknown_pat = '(undefined|unknown|incertae[_ ]sedis)',
+                         sp_pat = r'{[ _]+(sp|spec)\.?$}',
+                         # by default, we require at least an ~order name
+                         required_ranks = 4,
+                         ...) {
+
   if (is.null(taxonomy)) {
     s <- stringr::str_split_fixed(names(seqs), '\\s+', 2)
     names(seqs) <- s[,1]
@@ -128,12 +162,12 @@ write_utax <- function(seqs,
     lineages[grepl(sp_pat, lineages[,'s'], ignore.case=TRUE, perl=TRUE), 's'] <- NA
   }
   lineages[lineages == ''] <- NA
-  
+
   # rank level filter
   sel <- rank_level(lineages) >= required_ranks
   lineages <- lineages[sel, , drop=FALSE]
   seqs <- seqs[sel]
-  
+
   # convert to UTAX
   # escape reserved chars
   lineages <- apply(lineages, 2, function(t) gsub('[:,\\s]', '_', t, perl=TRUE))
@@ -142,24 +176,32 @@ write_utax <- function(seqs,
     paste(paste(names(l), l, sep=':'), collapse=',')
   })
   names(seqs) <- sprintf('%s;tax=%s', names(seqs), lineages)
-  
+  seqs
+}
+
+convert_write_utax <- function(seqs, outfile, ...) {
+  seqs <- convert_utax(seqs, ...)
   if (!dir.exists(dirname(outfile))) {
     dir.create(dirname(outfile), FALSE, TRUE)
   }
-  Biostrings::writeXStringSet(seqs, outfile, compress = endsWith(outfile, '.gz'))
+  write_dna(seqs, outfile, compress = endsWith(outfile, '.gz'))
 }
 
 write_taxdb <- function(seqs, outfile) {
-  Biostrings::writeXStringSet(utax_seqs, compress = endsWith(outfile, '.gz'))  
+  write_dna(utax_seqs, compress = endsWith(outfile, '.gz'))
 }
 
+#' Run taxonomy assignment (SINTAX algorithm)
+#'
+#' This requires [VSEARCH](https://github.com/torognes/vsearch) to be installed.
+#'
+#' @export
 assign_taxonomy_sintax <- function(seq_file,
-                            utax_db,
-                            confidence_threshold = 0.8,
-                            tmp_prefix = NULL,
-                            threads = 1,
-                            vsearch = 'vsearch') {
-  # print(make_fasta(seqs))
+                                   utax_db,
+                                   confidence_threshold = 0.8,
+                                   tmp_prefix = NULL,
+                                   threads = 1) {
+  vsearch <- get_program('vsearch')
   out <- run_bash(
     c(
       vsearch,
@@ -183,6 +225,8 @@ assign_taxonomy_sintax <- function(seq_file,
   lineages
 }
 
+
+#' @export
 parse_utax_lineages <- function(lineages) {
   lineages <- strsplit(as.character(lineages), ',', fixed = TRUE)
   lineages <- lapply(lineages, function(l) {
@@ -210,6 +254,7 @@ parse_utax_lineages <- function(lineages) {
   lineages
 }
 
+#' @export
 make_taxon_name <- function(lineages) {
   for (rank in c('genus', 'species')) {
     if (!(rank %in% colnames(lineages))) {
@@ -239,11 +284,37 @@ normalize_taxa <- function(taxa) {
   gsub('Fungus\\b', 'Fungi', t)
 }
 
-gbif_taxa <- function(taxa,
-                      cache_file,
-                      known_kingdom = NA,
-                      likely_kingdom = NA,
-                      verbose = FALSE) {
+#' Match a taxonomic name/lineage against the GBIF taxonomy
+#'
+#' This function uses the GBIF web API (accessed through [rgbif](https://docs.ropensci.org/rgbif/index.html))
+#' to retrieve the currently accepted taxon name and lineage
+#' according to the GBIF [backbone taxonomy](https://www.gbif.org/dataset/d7dddbf4-2cf0-4f39-9b2a-bb099caae36c)
+#' (see also species lookup)[https://www.gbif.org/tools/species-lookup].
+#'
+#' @param taxa A character vector of taxonomic names or a matrix/data frame with lineages;
+#' columns must have rank names and the first column should be *name*, containing
+#' taxonomic names such as "Russula sp." or "Bacteria". The lineages don't need
+#' to be complete (NA or only few ranks allowed), but their presence may help
+#' with the matching.'
+#' @param cache_file Path where past searches are stored in a tab-separated text format.
+#' This avoids havoing to query the GBIF API repeatedly for thousands of taxa.
+#' Delete the file (or individual lines) to re-query the GBIF API for the taxa.
+#' @param known_kingdom provide a known kingdom as alternative to providing the
+#' kingdom in a matrix of lineages. Supplying the kingdom may help to resolve
+#' ambiguous matches.
+#' @param likely_kingdom If the kingdom is not known for sure (but very likely),
+#' it can be provided here. The GBIF API will be searched without and with kingdom,
+#' and the result yielding a more complete lineage is returned
+#'
+#' @returns A matrix with lineages; rows are in the same order as in the `taxa`
+#' vector or matrix
+#'
+#' @export
+get_gbif_taxa <- function(taxa,
+                          cache_file,
+                          known_kingdom = NA,
+                          likely_kingdom = NA,
+                          verbose = FALSE) {
   gbif_ranks <- c('kingdom',
                   'phylum',
                   'class',
@@ -251,11 +322,11 @@ gbif_taxa <- function(taxa,
                   'family',
                   'genus',
                   'species')
-  
+
   taxa_key <- function(d) {
     apply(d, 1, function(l) paste(gsub('[|\\s]', '_', l, perl=TRUE), collapse='|'))
   }
-  
+
   gbif_match <- function(d) {
     stopifnot(inherits(d, 'data.frame'))
     stopifnot('name' %in% names(d))
@@ -276,14 +347,15 @@ gbif_taxa <- function(taxa,
     row.names(t) <- NULL
     t[m,]
   }
-  
+
   stopifnot(!is.null(known_kingdom))
   stopifnot(!is.null(likely_kingdom))
-  
+
   if (inherits(taxa, 'data.frame') || inherits(taxa, 'matrix')) {
     taxa <- as.data.frame(taxa)
     stopifnot('name' %in% names(taxa))
   } else {
+    stopifnot(is.null(dim(taxa)))
     taxa <- data.frame(name = taxa)
   }
   names(taxa)[names(taxa) == 'domain'] <- 'kingdom'
@@ -309,7 +381,7 @@ gbif_taxa <- function(taxa,
   if (nrow(query_taxa) > 0) {
     if (verbose)
       message('Matching ', nrow(query_taxa), ' taxa against GBIF backbone')
-        
+
     # try without/with alternative kingdom
     # (narrowing down the putative kingdom is sometimes successful)
     try_kingdoms <- as.character(unique(c(known_kingdom, likely_kingdom)))
@@ -350,7 +422,7 @@ gbif_taxa <- function(taxa,
     # *note*: names may still not be found
     # (https://docs.ropensci.org/rgbif/articles/taxonomic_names.html#too-many-choices-problem)
     lineages <- rbind(lineages, tax.out)
-    write.table(cbind(taxon = row.names(lineages), lineages), 
+    write.table(cbind(taxon = row.names(lineages), lineages),
                 cache_file, sep = '\t', na = '', quote = FALSE, row.names = FALSE)
   }
   stopifnot(!is.na(match(taxa$key, row.names(lineages))))

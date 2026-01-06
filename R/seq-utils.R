@@ -1,14 +1,6 @@
 
-install_sequtil_deps <- function() {
-  p <- installed.packages()[,c('Package')]
-  install.packages(setdiff('BiocManager', p))
-  p.bioc = setdiff(c('Biostrings', 'DECIPHER'), p)
-  if (length(p.bioc) > 0)
-    BiocManager::install(p.bioc)
-}
-
 n_ambigs <- function(x) {
-  nchar(gsub('[ACGT]', '', as.character(x)))  
+  nchar(gsub('[ACGT]', '', as.character(x)))
 }
 
 limit_sample <- function(x, limit) {
@@ -16,13 +8,13 @@ limit_sample <- function(x, limit) {
 }
 
 
-write_dna <- function(seqs, seq_file) {
+write_dna <- function(seqs, seq_file, ...) {
   stopifnot(!is.null(names(seqs)))
-  Biostrings::writeXStringSet(Biostrings::DNAStringSet(seqs), seq_file)
+  Biostrings::writeXStringSet(Biostrings::DNAStringSet(seqs), seq_file, ...)
 }
 
-read_dna <- function(seq_file) {
-  Biostrings::readDNAStringSet(seq_file)
+read_dna <- function(seq_file, ...) {
+  Biostrings::readDNAStringSet(seq_file, ...)
 }
 
 #' Does a pairwise alignment between pairs of sequences
@@ -47,7 +39,7 @@ pairwise_align <- function(seq1,
 
 #' Extracts the number of mismatches and pattern/subject gaps
 #' from a DECIPHER::AlignPairs result.
-#' Sets all values to Inf if the overlap length relative to 'seq1' 
+#' Sets all values to Inf if the overlap length relative to 'seq1'
 #' is lower than 'min_overlap'
 get_aln_stats <- function(aln,
                           min_overlap = 0.5,
@@ -67,7 +59,7 @@ get_aln_stats <- function(aln,
     a <- aln[i,]
     seq1_coverage <- (a$Matches + a$Mismatches) / (a$PatternEnd - a$PatternStart + 1)
     out <- if (seq1_coverage >= min_overlap) {
-      c(mismatches = a$Mismatches[1], 
+      c(mismatches = a$Mismatches[1],
         seq1_gaps = sum(a$PatternGapLength[[1]]),
         seq2_gaps = sum(a$SubjectGapLength[[1]]))
     } else {
