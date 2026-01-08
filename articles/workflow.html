@@ -180,12 +180,14 @@ consensus sequence, which can still be manually inspected.</p>
 </h3>
 <p>After DADA2 denoising, haplotype splitting and fixed-threshold
 clustering, the raw (quality-filtered) reads are always aligned to the
-representative sequence (ASV or dominant unique sequence) with <a href="https://lh3.github.io/minimap2" class="external-link">Minimap2</a>. The consensus
-sequence is then obtained with <a href="https://www.htslib.org/doc/samtools-consensus.html" class="external-link">samtools
-consensus</a>. With the default settings in <code>infer_barcodes</code>,
-each base in the consensus sequence needs to be supported by at least
-65% of the reads (weighted by quality scores) to be
-<em>unambiguous</em>. Otherwise, an <a href="https://en.wikipedia.org/wiki/Nucleic_acid_notation" class="external-link">ambiguous
+representative sequence (ASV or dominant unique sequence) with <a href="https://lh3.github.io/minimap2" class="external-link">Minimap2</a>.</p>
+<p>The consensus sequence is then obtained with <a href="https://www.htslib.org/doc/samtools-consensus.html" class="external-link">samtools
+consensus</a> using a frequency-based approach; no elaborate neural
+network-based inference is done (see e.g. <a href="https://github.com/nanoporetech/medaka" class="external-link">Medaka</a>). With the
+default settings in <code>infer_barcodes</code>, each base in the
+consensus sequence needs to be supported by at least 65% of the reads
+(weighted by quality scores by default) to be <em>unambiguous</em>.
+Otherwise, an <a href="https://en.wikipedia.org/wiki/Nucleic_acid_notation" class="external-link">ambiguous
 base</a> is shown, which may indicate unresolved sequence variation.</p>
 <p>The length of <strong>long homopolymer</strong> repeats is often not
 very consistent between different sequencing reads, which often results
