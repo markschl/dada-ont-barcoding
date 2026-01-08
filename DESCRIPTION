@@ -34,3 +34,4 @@ SystemRequirements:
     Minimap2 (https://lh3.github.io/minimap2),
     VSEARCH (https://github.com/torognes/vsearch),
     Seqtool (https://github.com/markschl/seqtool)
+VignetteBuilder: knitr

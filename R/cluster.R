@@ -595,24 +595,25 @@ dada_learn_errors <- function(fq_paths, omega_a = 1e-20, cores = 1, ...) {
 
 }
 
-# Run DADA2 denoising
-#
-# Runs DADA2 on a FASTQ file, removes chimeras and and returns
-# an abundance-sorted data frame of ASVs with some additional information
-#
-# @param x FASTQ file path or *derep-class* object
-# @param dada_err error information returned by [dada_learn_errors]
-# @param max_members do random subsampling of overly large ASVs to
-# the specified number of sequences
-# @param singleton_threshold by default, singletons cannot form a new cluster,
-# but for very low-depth samples (< N duplicates of any sequence),
-# DETECT_SINGLETONS is turned on (see [dada2::setDadaOpt]).
-# This increases sensitivity with InDel-rich Nanopore data and prevents that
-# a large proportion of sequences are discarded.
-# @param ... Arguments passed to [dada2::dada]
-#
-# @returns a data frame with the following columns:
-# - (TODO: document)
+#' Run DADA2 denoising
+#'
+#' Runs DADA2 on a FASTQ file, removes chimeras and and returns
+#' an abundance-sorted data frame of ASVs with some additional information
+#'
+#' @param x FASTQ file path or *derep-class* object
+#' @param dada_err error information returned by [dada_learn_errors]
+#' @param max_members do random subsampling of overly large ASVs to
+#' the specified number of sequences
+#' @param singleton_threshold by default, singletons cannot form a new cluster,
+#' but for very low-depth samples (< N duplicates of any sequence),
+#' DETECT_SINGLETONS is turned on (see [dada2::setDadaOpt]).
+#' This increases sensitivity with InDel-rich Nanopore data and prevents that
+#' a large proportion of sequences are discarded.
+#' @param ... Arguments passed to [dada2::dada]
+#'
+#' @returns a data frame with the following columns:
+#' - *sequence*
+#' - *top_uniques*: abundance of top unique sequences
 dada2_denoise <- function(x,
                           dada_err,
                           cores = 1,
@@ -695,24 +696,30 @@ dada2_denoise <- function(x,
 }
 
 
-# Attempts splitting sequence cluster into two haplotypes.
-#
-# @param reads XStringQuality object
-# @param d data frame returned by dada2_denoise -> ambig_consensus with these columns
-# - id
-# - top_uniques
-# - consensus_ambigs
-#
-# @details
-# Splitting is done if the sum of the consensus ambiguities of the two resulting
-# sequence variants is smaller than the number of consensus ambiguities of the parent.
-#
-# Overwrites the existing BAM files and FASTA references in 'prefix'.
+#' Attempts splitting sequence cluster into two haplotypes.
+#'
+#' @param reads XStringQuality object
+#' @param d a data frame as returned by [dada2_denoise] and [ambig_consensus] with these columns:
+#' - id
+#' - top_uniques
+#' - consensus_ambigs
+#' @param prefix Path prefix where the .bam alignment and .fasta reference is found
+#' (may be overwritten!)
+#' @param min_identical minimum number of *identical* sequences supporting *both*
+#' of the dominant unique sequences
+#' @param max_ratio maximum abundance ratio (mapped read abundances) for splitting
+#' @param fast use faster compression (larger BAM file)
+#'
+#' @details
+#' Splitting is done if the sum of the consensus ambiguities of the two resulting
+#' sequence variants is smaller than the number of consensus ambiguities of the parent
+#' cluster.
+#'
+#' Overwrites the existing BAM files and FASTA references in 'prefix'.
 try_split_haplotypes <- function(reads,
                                  d,
                                  prefix,
-                                 max_depth = 5000,
-                                 min_identical = 2,
+                                 min_identical = 4,
                                  max_ratio = 3,
                                  fast = FALSE,
                                  cores = 1,
@@ -1010,17 +1017,18 @@ rename_bam_refs <- function(prefix,
   }
 }
 
+# Map reads against references and infer a consensus sequence
 ambig_consensus <- function(seqs,
-                           ref_seq,
-                           out_prefix,
-                           consensus_threshold = 0.65,
-                           consensus_by_qual = TRUE,
-                           fast = FALSE,
-                           homopoly_fix = FALSE,
-                           min_homopoly_len = 6,
-                           cores = 1,
-                           minimap2 = 'minimap2',
-                           samtools = 'samtools') {
+                            ref_seq,
+                            out_prefix,
+                            consensus_threshold = 0.65,
+                            consensus_by_qual = TRUE,
+                            fast = FALSE,
+                            homopoly_fix = FALSE,
+                            min_homopoly_len = 6,
+                            cores = 1,
+                            minimap2 = 'minimap2',
+                            samtools = 'samtools') {
   # write reference and reads to file
   ref_file <- paste0(out_prefix, '.fasta')
   reads_file <- paste0(out_prefix, '_seqs.fastq')

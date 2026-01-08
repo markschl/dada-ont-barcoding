@@ -1,0 +1,52 @@
+---
+title: "Lab methods"
+output: rmarkdown::html_vignette
+vignette: >
+  %\VignetteIndexEntry{Lab methods}
+  %\VignetteEncoding{UTF-8}
+  %\VignetteEngine{knitr::rmarkdown}
+---
+
+This procedure was used for a fungal ITS barcoding project (ITS5-ITS4).
+
+# Primers
+
+The forward and reverse primers with sample indexes were mixed to a final concentration of *5 µM* (*each*), diluted with Qiagen elution buffer (10 mM Tris-HCl, pH 8.5).
+
+# PCR amplification
+
+Using the [GoTaq G2 hot-start green master mix](https://promega.com/products/pcr/taq-polymerase/gotaq-g2-hot-start-master-mixes).
+
+| Component | original conc. | target conc. | one reaction | master mix (442 rxn = 4 x 96 + 15%) |
+|---------------|---------------|---------------|---------------|---------------|
+| Master Mix | 2x | 1x | 5 µl | 2210 µl |
+| Primer mix | 5 µM (each) | 0.5 µM | 2 µl |  |
+| DNA |  |  | 1 µl |  |
+| water |  |  | 2 µl | 884 µl |
+| total |  |  | 10 µl | 3094 µl |
+
+First, distribute 7 µl to each well, then add 2 µl forward + reverse primers and 1 µl DNA separately.
+
+The cycling protocol (**36 PCR cycles**):
+
+| Step            | Temperature | Time  |
+|-----------------|-------------|-------|
+| Initial denat.  | 95 °C       | 2 min |
+| Denaturation    | 95 °C       | 30 s  |
+| Annealing       | 52 °C       | 30 s  |
+| Extension       | 72 °C       | 75 s  |
+| Final extension | 72 °C       | 5 min |
+
+It is hepful to check the amplification on a gel for at least a few samples before proceeding.
+
+# Pooling
+
+-   Pooled 1.5 - 6 µl from each amplicon (depending on sample number) into 8-strip PCR tubes, then combined them into a Eppendorf tube.
+-   Cleanup with AmpureXP beads (0.6:1 ratio works for ITS; 300ul beads + 500ul pool) → eluted in 30-40ul water or elution buffer.
+-   Dilution to 20 ng/ul = 1µg in 50µl
+
+# Library preparation and sequencing
+
+-   Following the protocol *Ligation sequencing V14 - PCR barcoding* guide (or newer), Starting at step *6. End-prep*
+-   Sequencing on a MinION for up to 24h to generate up to 20M reads: this is more than enough for 15 plates, we also obtained good barcode sequences for most samples with only 3M reads.
+-   Up to 3 runs were done on the same flow cell

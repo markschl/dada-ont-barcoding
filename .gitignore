@@ -1,14 +1,14 @@
 _*
-!_targets.R
 *~
 taxdb/
 site/
 vignettes/*.html
 vignettes/*.pdf
 docs/
-man/
 .Rproj.user
 .Rhistory
 .RData
 .Ruserdata
 .venv/
+docs/
+inst/doc/
