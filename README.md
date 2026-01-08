@@ -1,46 +1,63 @@
-# Nanopore barcoding pipeline
+# DadaNanoBC: Nanopore barcoding pipeline
 
-This R-based pipeline infers *specimen barcodes* from Nanopore sequencing data
-with multiplexed samples.
+This R package provides functions for:
 
-It uses a [DADA2](https://benjjneb.github.io/dada2)-based
-[clustering strategy](https://markschl.github.io/dada-ont-barcoding/analysis/workflow#details-on-the-clustering)
-and reports consensus sequences, separately for haplotypes and other sequence
-polymorphisms as well as possible.
-This requires that each amplicon is supported by at least a few error-free sequencing reads,
-which is usually the case with the latest R10.4 chemistry, given that sequences
-are not overly long (tested with 500-1000 bp amplicons).
-In case of low sequencing depths (with low replication), a fixed-threshold clustering
-procedure is applied instead.
+- *sample demultiplexing* of base-called Nanopore sequencing data 
+- inferring specimen *barcode sequences* using a [DADA2](https://benjjneb.github.io/dada2)-based
+  strategy to accurately resolve haplotypes/polymorphic sequences
+- automatic *taxonomic assignents* and recognition (down-ranking) of contaminant taxa
+- detailed output files (comprehensive Excel table for curation, HTML report, BAM alignment files)
 
-**Other features**
+A fully-fledged [targets](https://books.ropensci.org/targets) pipeline connects
+these features to a comparehensive workflow.
 
-- Automatic *taxonomic assignments* (currently implemented for the ITS marker)
-  for validating the morphological identifications and auto-filtering of contaminants
-- Detailed output:
-    * *detailed processing report* (generated from `analysis.Rmd`)
-      ([example](https://markschl.github.io/dada-ont-barcoding/analysis-example.html))
-    * *Excel table* with detailed overview of sequences and possible issues
-      (see [curation](https://markschl.github.io/dada-ont-barcoding/curation))
-    * *BAM/FASTA files* that assist with [manual curation](https://markschl.github.io/dada-ont-barcoding/curation)
+## What type of data does it work with?
 
-[More on the clustering workflow and other processing steps](https://markschl.github.io/dada-ont-barcoding/analysis/workflow)
+- *Base-called* amplicon reads with sample-specific tags attached to both ends
+  (dual-indexed)
+- Sufficient reads of sufficient quality (R10.4 chemistry)
+- Amplicon lengths of 0.5-1.5kb have been successfully tested
+- Works with fixed- and variable-length amplicons from different taxonomic groups
+  taht can be multiplexed and analyzed separately
+- different taxonomic database types can be auto-downloaded
+  (more may be implemented in the future)
 
-## Documentation of full barcoding workflow
+## System requirements
 
-[Go to documentation start page](https://markschl.github.io/dada-ont-barcoding)
+- An UNIX environment (Linux, OS X or Windows with WSL2) with *Bash*
+- An [R](https://cran.r-project.org) installation
+- Some functions rely on third-party command-line programs:
+  [seqtool](https://github.com/markschl/seqtool) for primer trimming/demultiplexing,
+  [samtools](https://www.htslib.org) and [minimap2](https://github.com/lh3/minimap2)
+  for dealing with alignments and 
+  [VSEARCH](https://github.com/torognes/vsearch) for sequence-based taxonomic assignments
+  (see [installation of programs](#installation-of-programs))
 
-Topics:
+The package can always be installed; error messages may appear when calling
+functions that rely on missing components.
 
-1. [Primer design](https://markschl.github.io/dada-ont-barcoding/primers)
-   ([example report](https://markschl.github.io/dada-ont-barcoding/primer-design-example.html))
-1. [PCR, library preparation and sequencing](https://markschl.github.io/dada-ont-barcoding/lab)
-2. [Infer barcode sequences](https://markschl.github.io/dada-ont-barcoding/analysis) using this pipeline
-   ([example report](https://markschl.github.io/dada-ont-barcoding/analysis-example.html))
-3. [Manual curation](https://markschl.github.io/dada-ont-barcoding/curation)
+If [basecalling](https://nanoporetech.com/document/data-analysis#basecalling-overview)
+of the Nanopore data has not yet been done: an Nvidia GPU with Cuda support
+(details in [basecalling tutorial](basecalling.md)).
 
-## Useful references
 
-- [Srivathsan & Meier (2024)](https://doi.org/10.1007/978-1-0716-3581-0_14)
-- [Hebert et al. (2024)](https://doi.org/10.1111/1755-0998.14028) barcoded up to 100k samples with a single MinION run.
-- [ONT barcoding efforts by the MycoMap network](https://www.researchgate.net/publication/393048029_Approaching_Full-Scale_DNA_Barcoding_for_North_American_Macrofungi_Highlights_from_the_MycoMap_Network) (see also [methods description](https://dx.doi.org/10.17504/protocols.io.dm6gpbm88lzp/v4))
+## Quickstart
+
+Install the package:
+
+```r
+devtools::install_github("markschl/DadaNanoBC")
+```
+
+Copy the pipeline templates to the current directory
+
+```r
+# optional: setwd("path/to/some/directory")
+...
+```
+
+
+## Installation of programs
+
+
+(...)
