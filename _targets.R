@@ -16,7 +16,7 @@ init_config <- function(analysis_dir) {
       error_threshold = 2.5,
       primer_max_err = 0.2,
       idx_max_diffs = 0,
-      min_read_length = 50,
+      min_barcode_length = 50,
       keep_trimmed = FALSE
     ),
     cluster = list(
@@ -56,20 +56,19 @@ init_config <- function(analysis_dir) {
                                            amplicons=levels(config$sample_tab$amplicon))
   # taxonomy assignment options
   stopifnot(!is.null(config$taxonomy))
-  config$amplicon_taxdb <- init_nested_opts(config$taxonomy, names(config$amplicons))
+  config$amplicon_taxdb <- init_nested_opts(config$taxonomy, names(config$amplicons),
+                                            description = 'taxonomy')
   config
 }
 
 #' Propagates global options to nested sub-sections overriding them
 #' (used for taxonomy databases)
-init_nested_opts <- function(opts, nested_names) {
+init_nested_opts <- function(opts, nested_keys, description = NULL) {
   opts <- opts %||% list()
-  global_opts <- opts[setdiff(names(opts), nested_names)]
-  out <- opts[nested_names]
-  names(out) <- nested_names
-  opts[nested_names] <- NULL
-  for (item in nested_names) {
-    out[[item]] <- modifyList(global_opts, out[[item]] %||% list())
+  global_keys <- setdiff(names(opts), nested_keys)
+  out <- list()
+  for (key in nested_keys) {
+    out[[key]] <- modifyList(opts[global_keys], opts[[key]] %||% list())
   }
   out
 }
@@ -184,6 +183,9 @@ recluster_contaminated <- function(seq_tab,
 #### Pipeline definition #######################################################
 
 # obtain working directory, number of workers and program paths from environment vars
+Sys.setenv('DadaNanoBC_ANALYSIS_DIR' = 'analysis/20251209_ONTbarcoding_16S_ITS-test')
+Sys.setenv('DadaNanoBC_WORKERS' = 8)
+
 analysis_dir <- Sys.getenv('DadaNanoBC_ANALYSIS_DIR', 'analysis')
 n_workers <- as.integer(Sys.getenv('DadaNanoBC_WORKERS', '4'))
 for (dep in c('seqtool', 'samtools', 'minimap2', 'vsearch')) {
