@@ -871,14 +871,14 @@ subset_combine_bam <- function(out_prefix,
                                do_index = TRUE,
                                samtools = 'samtools') {
   # recursively merge large lists if necessary
-  if (length(sel_list) > chunk_size) {
+  if (recursive <- length(sel_list) > chunk_size) {
     n <- max(ceiling(length(sel_list) / chunk_size), chunk_size)
-    sub_chunks <- split(sel_list, ceiling(1:length(sel_list) / n))
-    chunk_prefixes <- paste0(out_prefix, '_tmp_', seq_along(sub_chunks))
-    for (i in seq_along(sub_chunks)) {
+    sel_chunks <- split(sel_list, ceiling(1:length(sel_list) / n))
+    sel_list <- paste0(out_prefix, '_tmp_', seq_along(sel_chunks))
+    for (i in seq_along(sel_chunks)) {
       subset_combine_bam(
-        chunk_prefixes[i],
-        sub_chunks[[i]],
+        sel_list[i],
+        sel_chunks[[i]],
         cores = cores,
         chunk_size = chunk_size,
         fast = fast,
@@ -887,10 +887,6 @@ subset_combine_bam <- function(out_prefix,
         samtools = samtools
       )
     }
-    for (prefix in chunk_prefixes) {
-      remove_bam(prefix)
-    }
-    return()
   }
 
   # merge BAM
@@ -951,13 +947,23 @@ subset_combine_bam <- function(out_prefix,
     refs <- do.call(c, lapply(sel_list, function(x) {
       r <- read_dna(paste0(x[[1]], '.fasta'))
       if (length(x) == 2) {
-        r <- r[match(x[[2]], gsub(' .*', '', names(r)))]
+        sel <- match(x[[2]], gsub(' .*', '', names(r)))
+        stopifnot(!is.na(sel))
+        r <- r[sel]
       }
       r
     }))
     write_dna(refs, ref_out)
     outfiles['fasta'] <- paste0(out_prefix, '.fasta')
   }
+
+  # clean up temporary files
+  if (recursive) {
+    for (prefix in sel_list) {
+      remove_bam(prefix, index = FALSE)
+    }
+  }
+
   outfiles
 }
 
@@ -1215,8 +1221,8 @@ move_bam <- function(prefix, out_prefix) {
   }
 }
 
-remove_bam <- function(prefix, out_prefix) {
-  invisible(file.remove(paste0(prefix, c('.fasta', '.bam', '.bam.bai'))))
+remove_bam <- function(prefix, out_prefix, index=TRUE) {
+  invisible(file.remove(paste0(prefix, c('.fasta', '.bam', if (index) '.bam.bai'))))
 }
 
 bam_to_map <- function(bam_file, samtools = 'samtools') {

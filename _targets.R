@@ -8,8 +8,10 @@ init_config <- function(analysis_dir) {
   # some minimal configuration defaults (needed in report, etc.)
   # TODO: these defaults are the same in the function args, some redundancy here
   minimal_config_defaults <- list(
-    analysis_dir = analysis_dir,
     reads_path = file.path(analysis_dir, 'reads.fastq.gz'),
+    analysis_dir = analysis_dir,
+    tmp_dir = file.path(analysis_dir, 'tmp'),
+    taxdb_dir = 'taxdb',
     demultiplex = list(
       error_threshold = 2.5,
       primer_max_err = 0.2,
@@ -33,25 +35,20 @@ init_config <- function(analysis_dir) {
       report = list(
         low_abund_threshold = 20
       ),
-      alignments = TRUE
+      alignments = 'top_combined'
     )
   )
   config <- modifyList(minimal_config_defaults, config)
   stopifnot(file.exists(config$reads_path))
   # init directories
-  config$taxdb_dir <- config$taxdb_dir %||% 'taxdb'
-  config$tmp_dir <- config$tmp_dir %||% file.path(analysis_dir, 'tmp')
   dir.create(analysis_dir, FALSE)
   dir.create(config$taxdb_dir, FALSE)
   # output
-  for (section in c('alignments', 'report')) {
-    if (isTRUE(config$output[[section]]))
-      config$output[[section]] <- list()
-    else if (isFALSE(config$output[[section]]))
-      config$output[[section]] <- NULL
+  stopifnot(config$output$alignments %in% c('separate', 'top_combined', 'combined'))
+  config$alignment_dir <- if (length(config$output$alignments) > 0) {
+    file.path(ifelse('separate' %in% config$output$alignments, analysis_dir, config$tmp_dir),
+              'separate_alignments')
   }
-  if (!is.null(config$output$alignments) | !is.null(config$output$all_alignments))
-    config$alignment_dir <- file.path(config$tmp_dir, 'all_alignments')
   # read metadata
   meta_file <- file.path(analysis_dir, 'meta.xlsx')
   config$sample_tab <- read_xlsx_sample_tab(meta_file, 'sample_list')
@@ -63,6 +60,8 @@ init_config <- function(analysis_dir) {
   config
 }
 
+#' Propagates global options to nested sub-sections overriding them
+#' (used for taxonomy databases)
 init_nested_opts <- function(opts, nested_names) {
   opts <- opts %||% list()
   global_opts <- opts[setdiff(names(opts), nested_names)]
@@ -319,12 +318,24 @@ list(
     out
   }, format = 'file'),
   tar_target(
-    combined_bam,
-    if (!is.null(config$output$alignments))
+    combined_bam_top,
+    if ('top_combined' %in% config$output$alignments)
       do_combine_alignments(
         recluster_contam_seqtab,
         config$alignment_dir,
-        out_prefix = file.path(analysis_dir, 'alignments')
+        outdir = file.path(analysis_dir, 'top_alignments'),
+        top_only = TRUE
+      ),
+    format = 'file'
+  ),
+  tar_target(
+    combined_bam,
+    if ('combined' %in% config$output$alignments)
+      do_combine_alignments(
+        recluster_contam_seqtab,
+        config$alignment_dir,
+        outdir = file.path(analysis_dir, 'alignments'),
+        top_only = FALSE
       ),
     format = 'file'
   )

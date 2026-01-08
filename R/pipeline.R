@@ -546,7 +546,7 @@ do_infer_all_barcodes <- function(seq_tab,
 #' @returns Named list of output files
 #'
 #' @export
-do_combine_alignments <- function(seq_tab, aln_dir, out_prefix, top_only = FALSE) {
+do_combine_alignments <- function(seq_tab, aln_dir, outdir, top_only = FALSE) {
   # combine mapped reads
   idx_path <- file.path(aln_dir, seq_tab$indexes, seq_tab$indexes)
   sel_i <- which(!is.na(seq_tab$omega_a))
@@ -566,6 +566,8 @@ do_combine_alignments <- function(seq_tab, aln_dir, out_prefix, top_only = FALSE
     idx_path[sel_i]
   }
   samtools <- get_program('samtools')
+  dir.create(outdir, FALSE, TRUE)
+  out_prefix <- file.path(outdir, 'alignments')
   outfiles <- subset_combine_bam(out_prefix, sel_list, samtools = samtools)
   # combine sequence comparisons
   sel <- !is.na(seq_tab$has_seq_comparison) &
