@@ -1,0 +1,53 @@
+# Example *targets* pipeline configuration; adapt to your needs
+#
+# The only *required* section is "taxonomy": A taxonomic reference database is always needed
+# All other sections can be deleted completely if no default settings are changed.
+# Still, at least one relevant setting is shown per section.
+
+# Sample de-multiplexing and primer trimming
+# For available settings, see https://markschl.github.io/DadaNanoBC/reference/do_trim_demux.html
+demultiplex:
+  min_barcode_length: 200  # default: 50
+
+# Infer barcode sequences 
+# For available settings, see https://markschl.github.io/DadaNanoBC/reference/infer_barcodes.html
+cluster:
+  # Initially limiting the sample depth to 200 is useful for a first quick look into the data;
+  # but re-run with least 1000 to get sequences of higher quality
+  max_sample_depth: 200  # default: 5000
+
+# Description of all settings:
+# Reference databases: https://markschl.github.io/DadaNanoBC/reference/load_taxdb.html
+# Taxonomy assignment: https://markschl.github.io/DadaNanoBC/reference/do_taxonomy.html
+taxonomy:
+  # Database for ITS sequences (UNITE; https://doi.org/10.15156/BIO/3301243)
+  db_url: https://s3.hpc.ut.ee/plutof-public/original/0ee4ff53-bd04-454b-a937-af1f466bfe8b.tgz
+  db_type: unite
+  likely_kingdom: Fungi
+  known_contaminants:
+    family:
+      - Aspergillaceae
+      - Capnodiaceae
+  
+  # Example: the above settings can be overridden for specific amplicons
+  # (same name as in "amplicon" column in samples metadata)
+  # Here, taxonomic assignments are configured for a 16S amplicon (using GTDB Bacteria/Archaea databases)
+  b27F-b1492R:
+    db_url:
+      - https://data.gtdb.aau.ecogenomic.org/releases/release226/226.0/genomic_files_reps/bac120_ssu_reps_r226.fna.gz
+      - https://data.gtdb.aau.ecogenomic.org/releases/release226/226.0/genomic_files_reps/ar53_ssu_reps_r226.fna.gz
+    db_type: qiime_fasta
+    likely_kingdom: Bacteria
+
+output:
+  # Settings for Excel report
+  # (see https://markschl.github.io/DadaNanoBC/reference/create_excel_report.html)
+  report:
+    low_abund_threshold: 20  # this is the default
+  
+  # In which form should alignments (BAM files) be kept for manual inspection?
+  # (default: only 'top_combined')
+  alignments:
+    - separate  # directory with separate BAM files for every barcode
+    - combined  # one combined BAM file
+    - top_combined # one combined BAM file containing only alignment for *top taxon*

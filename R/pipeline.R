@@ -1,4 +1,55 @@
 
+#' Scaffold the Targets Pipeline
+#'
+#' @param path Where to create the `_targets.R` and other files
+#' @param analysis_dir Analysis directory
+#'
+#' @export
+init_pipeline <- function(path = '.', analysis_dir = 'analysis', workers = NULL) {
+  file_dir <- c(
+    '_targets.R' = path,
+    'infer_barcodes' = path,
+    'config.yaml' = analysis_dir,
+    'meta-ITS5-ITS4.xlsx' = analysis_dir
+  )
+  dir.create(analysis_dir, FALSE, TRUE)
+  for (f in names(file_dir)) {
+    source <- system.file('templates', f, package = 'DadaNanoBC')
+    target <- file.path(file_dir[[f]], f)
+    if (file.exists(target)) {
+      warning('File ', target, ' exists, not overwriting.')
+    } else {
+      file.copy(source, target)
+    }
+  }
+  if (analysis_dir != 'analysis') {
+    message(
+      sprintf('Running "Sys.setenv(DadaNanoBC_ANALYSIS_DIR = \'%s\')". ', analysis_dir),
+      "This needs to be done if the analysis is not run in 'analysis')"
+    )
+    Sys.setenv(setNames(analysis_dir, 'DadaNanoBC_ANALYSIS_DIR'))
+  }
+  if (is.null(workers)) {
+    workers <- parallel::detectCores()
+    message(sprintf('Assuming %d parallel workers, change with:\nSys.setenv(DadaNanoBC_ANALYSIS_DIR = <workers>)',
+                    workers))
+  }
+  message(
+    "Files copied!\nNext steps:\n",
+    sprintf("1. Modify the example metadata file '%s/meta-ITS5-ITS4.xlsx' to contain ",
+            analysis_dir),
+    "your primer sequences and sample metadata, and rename it to 'meta.xlsx'.\n",
+    sprintf("2. Copy/move the base-called sequencing reads to '%s/reads.fastq.gz'.\n",
+            analysis_dir),
+    sprintf("3. Adapt '%s/config.yaml' to your needs (at least the 'taxonony' section).\n",
+            analysis_dir),
+    "4. Run `targets::tar_make()`"
+  )
+  message('Checking for external programs needed by DadaNanoBC:')
+  check_system_requirements()
+}
+
+
 #' Read sample metadata from Excel file
 #'
 #' Reads a sample table from an Excel metadata file and passes it on to [parse_sample_tab]
@@ -302,7 +353,7 @@ do_primer_search <- function(fq_paths,
                               min_barcode_length = 50,
                               cores = 1) {
   amplicons <- names(amplicon_primers)
-  seqtool <- get_program('st', long_name = 'seqtool')
+  seqtool <- get_program('st', full_name = 'seqtool')
   for (amplicon in amplicons) {
     amp_search_dir <- file.path(out_dir, amplicon)
     demux_fq <- file.path(amp_search_dir, 'trimmed.fastq.zst')
@@ -328,7 +379,7 @@ do_primer_search <- function(fq_paths,
         '-t', cores,
         '-s', seqtool
       )
-      run_bash(c('scripts/find-primers.sh', search_opts, seq_prefix, fq_paths))
+      run_bash_script('find-primers.sh', c(search_opts, seq_prefix, fq_paths))
     }
     # input for next amplicon search
     fq_names <- paste0('no_',
@@ -429,14 +480,15 @@ do_demux <- function(primer_search_fq,
                       min_barcode_length = 50) {
 
   stopifnot(c('amplicon', 'indexes', 'sample', 'sample_type', 'taxon', 'known_sequence') %in% names(sample_tab))
-  seqtool <- get_program('st', long_name = 'seqtool')
-  run_bash(c('scripts/filter-split.sh',
-             error_threshold,
-             # **note**: currently, we have only one threshold both in 'find-primers' and 'demux'
-             min_barcode_length,
-             out_dir,
-             seqtool,
-             primer_search_fq))
+  seqtool <- get_program('st', full_name = 'seqtool')
+  run_bash_script(
+    'filter-split.sh',
+    c(error_threshold,
+      # **note**: currently, we have only one threshold both in 'find-primers' and 'demux'
+      min_barcode_length,
+      out_dir,
+      seqtool,
+      primer_search_fq))
   trimmed_fq <- file.path(out_dir, list.files(out_dir, pattern='.fastq.gz$'))
 
   # initialize the sequence table
@@ -685,7 +737,11 @@ propagate_data <- function(seq_tab, extra_seq_cols = NULL) {
 #' @param contam_rank_delta Require at least N additional ranks to be matching
 #' between the provided (e.g. morphology-based) and the auto-assigned
 #' sequence-based taxonomic lineages for a taxon to be determined as the
-#' "correct" taxon in the mix, and the top taxon being down-ranked
+#' "correct" taxon in the mix, and the top taxon being down-ranked.
+#'   This setting affects the "sensitivity" of the contaminant detection
+#'   (lower: more sensitive, but also more false classifications,
+#'   higher: some contamination may not be recognized).
+#'   The default of 3 seems to work well in most cases.
 #'
 #' @returns
 #' `do_assign_compare_taxonomy` returns

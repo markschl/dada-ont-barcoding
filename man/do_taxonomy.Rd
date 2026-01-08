@@ -62,7 +62,11 @@ name search (see \link{get_gbif_taxa})}
 \item{contam_rank_delta}{Require at least N additional ranks to be matching
 between the provided (e.g. morphology-based) and the auto-assigned
 sequence-based taxonomic lineages for a taxon to be determined as the
-"correct" taxon in the mix, and the top taxon being down-ranked}
+"correct" taxon in the mix, and the top taxon being down-ranked.
+This setting affects the "sensitivity" of the contaminant detection
+(lower: more sensitive, but also more false classifications,
+higher: some contamination may not be recognized).
+The default of 3 seems to work well in most cases.}
 }
 \value{
 \code{do_assign_compare_taxonomy} returns

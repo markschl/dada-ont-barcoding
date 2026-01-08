@@ -270,7 +270,6 @@ infer_barcodes <- function(fq,
           reads,
           d,
           prefix = round_prefix,
-          max_depth = max_sample_depth,
           min_identical = split_min_identical,
           max_ratio = max_split_ratio,
           consensus_threshold = consensus_threshold,
@@ -536,8 +535,7 @@ compare_seqs <- function(d,
     if (no_bam <- is.null(bam_out)) {
       bam_out <- tempfile('cmp', tmp_dir, fileext = '.bam')
     }
-    cmd <- c(
-      'scripts/map_ref_simple.sh',
+    args <- c(
       seq_file,
       ref_file,
       bam_out,
@@ -545,7 +543,7 @@ compare_seqs <- function(d,
       minimap2,
       samtools
     )
-    sam <- run_bash(cmd, stdout = TRUE)
+    sam <- run_bash_script('map_ref_simple.sh', args, stdout = TRUE)
     if (no_bam)
       file.remove(bam_out)
     sam <- if (length(sam) > 0) {
@@ -673,14 +671,17 @@ dada2_denoise <- function(x,
   # ASV cluster ID for *all* (non-dereplicated) input sequences (same order)
   cl <- dd$map[derep$map]
   cl <- split(seq_along(cl), cl)
+  # random subsampling for overly large ASVs
+  cl <- lapply(cl, function(i) {
+    if (length(i) > max_members) {
+      i <- sample(i, max_members)
+    }
+    i
+  })
   d$seq_indices = cl[as.character(d$id)]
 
   # In addition, remember the two most abundant sequences, used later for haplotype splitting
   d$top_uniques = lapply(d$seq_indices, function(i) {
-    if (length(i) > max_members) {
-      # random subsampling for overly large ASVs
-      i <- sample(i, max_members)
-    }
     uniq_freq <- tabulate(derep$map[i])
     i <- head(order(-uniq_freq), 2)
     setNames(uniq_freq[i], names(derep$uniques)[i])
@@ -1038,8 +1039,7 @@ ambig_consensus <- function(seqs,
   Biostrings::writeQualityScaledXStringSet(seqs, reads_file)
 
   # do mapping -> consensus
-  cmd <- c(
-    'scripts/ref_consensus.sh',
+  args <- c(
     reads_file,
     ref_file,
     out_prefix,
@@ -1063,7 +1063,7 @@ ambig_consensus <- function(seqs,
   )
 
   # read output files
-  stats <- run_bash(cmd, stdout = TRUE)
+  stats <- run_bash_script('ref_consensus.sh', args, stdout = TRUE)
   cons_out <- paste0(out_prefix, '_consensus.fasta')
   invisible(file.remove(reads_file))
   # invisible(file.remove(ref_file))

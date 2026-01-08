@@ -14,7 +14,7 @@
 #'
 #' @importFrom openxlsx2 wb_workbook wb_dims wb_color wb_comment int2col
 #' @export
-create_report <- function(seq_tab,
+create_excel_report <- function(seq_tab,
                           outfile,
                           low_abund_threshold = 20,
                           min_seqs_unknown = 10,

@@ -63,7 +63,10 @@ By default, single-linkage is applied with a 97% identity threshold. This may re
 
 ## How is the consensus sequence determined?
 
-After DADA2 denoising, haplotype splitting and fixed-threshold clustering, the raw (quality-filtered) reads are always aligned to the representative sequence (ASV or dominant unique sequence) with [Minimap2](https://lh3.github.io/minimap2). The consensus sequence is then obtained with [samtools consensus](https://www.htslib.org/doc/samtools-consensus.html). With the default settings in `infer_barcodes`, each base in the consensus sequence needs to be supported by at least 65% of the reads (weighted by quality scores) to be *unambiguous*. Otherwise, an [ambiguous base](https://en.wikipedia.org/wiki/Nucleic_acid_notation) is shown, which may indicate unresolved sequence variation.
+After DADA2 denoising, haplotype splitting and fixed-threshold clustering, the raw (quality-filtered) reads are always aligned to the representative sequence (ASV or dominant unique sequence) with [Minimap2](https://lh3.github.io/minimap2).
+
+The consensus sequence is then obtained with [samtools consensus](https://www.htslib.org/doc/samtools-consensus.html) using a frequency-based approach; no elaborate neural network-based inference is done (see e.g. [Medaka](https://github.com/nanoporetech/medaka)). 
+With the default settings in `infer_barcodes`, each base in the consensus sequence needs to be supported by at least 65% of the reads (weighted by quality scores by default) to be *unambiguous*. Otherwise, an [ambiguous base](https://en.wikipedia.org/wiki/Nucleic_acid_notation) is shown, which may indicate unresolved sequence variation.
 
 The length of **long homopolymer** repeats is often not very consistent between different sequencing reads, which often results in `N` bases in the consensus. A simple frequency-based approach is used to "fix" this situation: the homopolymer length is taken from the *most abundant sequence* (see also non-public function [fix_homopolymers](https://markschl.github.io/DadaNanoBC/reference/fix_homopolymers.html)).
 
