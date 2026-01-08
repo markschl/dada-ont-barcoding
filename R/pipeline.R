@@ -36,7 +36,7 @@ read_xlsx_sample_tab <- function(meta_file, sheet_name) {
 #'
 #' Optional columns:
 #'
-#' - *morpho-taxon*: Known or suspected taxon (any rank), will be compared to
+#' - *taxon*: Known or suspected taxon (any rank), will be compared to
 #'   the sequence-based identification and used for detecting contamination
 #' - *known sequence*: Already known sequence (if any), e.g. from a previous Sanger
 #'   sequencing; will be compared with the Nanopore-derived sequence
@@ -402,7 +402,7 @@ do_demux <- function(primer_search_fq,
                       error_threshold = 2.5,
                       min_barcode_length = 50) {
 
-  stopifnot(c('amplicon', 'indexes', 'sample', 'sample_type', 'morpho_taxon', 'known_sequence') %in% names(sample_tab))
+  stopifnot(c('amplicon', 'indexes', 'sample', 'sample_type', 'taxon', 'known_sequence') %in% names(sample_tab))
   seqtool <- get_program('st', long_name = 'seqtool')
   run_bash(c('scripts/filter-split.sh',
              error_threshold,
@@ -650,7 +650,7 @@ propagate_data <- function(seq_tab, extra_seq_cols = NULL) {
 #' @param likely_kingdom kingdom name providing some guidance for the GBIF
 #' name search (see [get_gbif_taxa])
 #' @param contam_rank_delta Require at least N additional ranks to be matching
-#' between the provided (usually morphology-based) and the auto-assigned
+#' between the provided (e.g. morphology-based) and the auto-assigned
 #' sequence-based taxonomic lineages for a taxon to be determined as the
 #' "correct" taxon in the mix, and the top taxon being down-ranked
 #'
@@ -682,7 +682,7 @@ propagate_data <- function(seq_tab, extra_seq_cols = NULL) {
 #'
 #' Sequences are flagged as contamination (*is_contaminant*) if:
 #' - there exists a less abundant taxon with the correct kingdom
-#'   (compared to *morpho-taxon*, GBIF name comparison guided by `likely_kingdom`)
+#'   (compared to *taxon*, GBIF name comparison guided by `likely_kingdom`)
 #' - a taxon has has at least `contam_rank_delta` more consistent (matching)
 #'   taxonomic ranks in the GBIF lineage than the top taxon
 #'   (explanation for *matching_ranks* above); undefined ranks are excluded
@@ -707,7 +707,7 @@ do_assign_compare_taxonomy <- function(seq_tab,
     summary_ranks = summary_ranks,
     cores = cores
   )
-  seq_tab <- do_compare_morpho_taxonomy(
+  seq_tab <- do_compare_taxonomy(
     tax$seq_tab,
     tax$seq_lineages,
     gbif_cache_file,
@@ -816,12 +816,12 @@ do_assign_taxonomy <- function(seq_tab,
 
 
 #' @export
-do_compare_morpho_taxonomy <- function(seq_tab,
-                                       seq_lineages,
-                                       gbif_cache_file,
-                                       known_contaminants = NULL,
-                                       likely_kingdom = NULL,
-                                       contam_rank_delta = 3) {
+do_compare_taxonomy <- function(seq_tab,
+                                seq_lineages,
+                                gbif_cache_file,
+                                known_contaminants = NULL,
+                                likely_kingdom = NULL,
+                                contam_rank_delta = 3) {
   # blacklist contaminants
   has_seqs <- !sapply(seq_tab$clustering, is.null)
   seq_tab$clustering[has_seqs] = lapply(seq_tab$clustering[has_seqs], function(d) {
@@ -837,12 +837,12 @@ do_compare_morpho_taxonomy <- function(seq_tab,
   })
 
   # try to find other contamination based on name matching
-  if (!('morpho_taxon' %in% names(seq_tab))) {
-    seq_tab$morpho_taxon = NA
+  if (!('taxon' %in% names(seq_tab))) {
+    seq_tab$taxon = NA
   }
 
-  morpho_taxon <- unique(na.omit(seq_tab$morpho_taxon))
-  if (length(morpho_taxon) > 0) {
+  taxon <- unique(na.omit(seq_tab$taxon))
+  if (length(taxon) > 0) {
     # get lineages from GBIF
     likely_kingdom <- as.character(likely_kingdom %||% NA)
     seq_lineages_gbif <- get_gbif_taxa(
@@ -852,27 +852,27 @@ do_compare_morpho_taxonomy <- function(seq_tab,
       verbose = TRUE
     )
     row.names(seq_lineages_gbif) <- row.names(seq_lineages)
-    morpho_lineages_gbif <- get_gbif_taxa(
-      morpho_taxon,
+    provided_lineages_gbif <- get_gbif_taxa(
+      taxon,
       cache_file = gbif_cache_file,
       likely_kingdom = likely_kingdom,
       verbose = TRUE
     )
-    row.names(morpho_lineages_gbif) <- morpho_taxon
+    row.names(provided_lineages_gbif) <- taxon
 
-    has_morphospec <- has_seqs & !is.na(seq_tab$morpho_taxon)
-    seq_tab$clustering[has_morphospec] <- lapply(which(has_morphospec), function(i) {
+    has_taxon <- has_seqs & !is.na(seq_tab$taxon)
+    seq_tab$clustering[has_taxon] <- lapply(which(has_taxon), function(i) {
       # cat(i, '\n')
       d <- seq_tab$clustering[[i]]
-      taxon <- seq_tab$morpho_taxon[i]
+      taxon <- seq_tab$taxon[i]
       # sort by taxon and abundance (in case it has been reordered above)
       max_abund <- ave(d$n_mapped, d$taxon_num, FUN = max)
       d <- d[order(-max_abund, d$taxon_num, -d$n_mapped), ]
       # calculate taxa overlap (proportion of matching names in the lineage)
-      morpho_lineage <- morpho_lineages_gbif[taxon, ]
+      provided_lineage <- provided_lineages_gbif[taxon, ]
       seq_lineages <- seq_lineages_gbif[d$unique_id, , drop = FALSE]
       lineage_cmp <- t(apply(seq_lineages, 1, function(l)
-        l == morpho_lineage))
+        l == provided_lineage))
       d$matching_ranks = rowSums(lineage_cmp, na.rm = TRUE)
       d$mismatching_ranks = rowSums(!lineage_cmp, na.rm = TRUE)
       if (all(d$taxon_num == d$taxon_num[1])) {
@@ -949,7 +949,8 @@ do_compare_morpho_taxonomy <- function(seq_tab,
       rank_match_delta <- rank_match[1] - rank_match
       rank_mismatch <- ave(rowSums(!lineage_cmp, na.rm = TRUE), d$taxon_num)
       if (any(!is_grp1 &
-              abund_ratio < 8 & rank_mismatch < 2 & rank_match_delta < 2)) {
+              abund_ratio < 8 &
+              rank_mismatch < 2 & rank_match_delta < 2)) {
         d$message[is_grp1] <- paste(d$message[is_grp1], 'Related taxa in mix;')
       }
     }

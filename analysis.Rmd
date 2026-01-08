@@ -84,7 +84,7 @@ theme_set(ggplot_theme())
 
 1)  Search the primers and short sample indexes (located up-/downstream of the primer sequences)
 2)  Infer the barcode sequences with [DADA2](https://benjjneb.github.io/dada2) and/or fixed-threshold clustering (for low-coverage variants), align and infer the consensus
-3)  Auto-assign the taxonomy and compare with the name given by morphological identification (if present) to validate and check for contamination.
+3)  Auto-assign the taxonomy and compare with provided taxon names to validate and check for contamination.
 4)  Compare with already known sequences (if present)
 5)  Export summary table, which can be further manually curated
 
@@ -96,14 +96,14 @@ The input following files are needed:
 
 * Base-called sequences (`reads.fastq.gz`)
 * Metadata file (`meta.xlsx`)
-* Configuration file (`config.yaml`)
+* Configuration file (*config.yaml*)
 
 ```{r config}
 config_file = file.path(analysis_dir, 'config.yaml')
 opts = yaml::read_yaml(config_file)
 ```
 
-The contents of `config.yaml`:
+The contents of *config.yaml*:
 
 ``` yaml
 `r xfun::file_string(file.path(analysis_dir, 'config.yaml'))`
@@ -118,7 +118,7 @@ config$sample_tab %>%
   group_by(amplicon) %>% 
   summarise(
     `# samples` = n(),
-    `# with morphological identification` = sum(!is.na(morpho_taxon)),
+    `# taxon provided` = sum(!is.na(taxon)),
     `# with known sequence` = sum(!is.na(known_sequence)),
     .groups = 'drop'
   )
@@ -162,7 +162,7 @@ overall_min_idx_dist = min(idxdist.summary$`min. index dist.`)
 stopifnot(config$demultiplex$idx_max_diffs < overall_min_idx_dist)
 ```
 
-The forward and reverse sample indexes have a length of `r paste(unique(idxdist.summary[['index length']]), collapse=' / ')` bp and a minimum edit distance of `r min(idxdist.summary[['min. index dist.']])` (see also Figure \@ref(fig:idxdist)). The maximum allowed number of sequencing errors in barcodes is `r (config$demultiplex$idx_max_diffs)`. This value should always be *smaller than the minimum distance* between any sample index).
+The forward and reverse sample indexes have a length of `r paste(unique(idxdist.summary[['index length']]), collapse=' / ')` bp and a minimum edit distance of `r min(idxdist.summary[['min. index dist.']])` (see also Figure \@ref(fig:idxdist)). The maximum allowed number of sequencing errors in barcodes is `r (config$demultiplex$idx_max_diffs)` (`idx_max_diffs` in *config.yaml*). This value should always be *smaller than the minimum distance* between any sample index).
 
 > *Note*: Using a lower `idx_max_diffs` threshold reduces false assignments of reads to samples, but also leads to less sequences being included in the analysis. On the other hand, an increased error tolerance increases the read count. You can check the unused barcode combinations (*unspecific* in below figures) for any "background noise".
 
@@ -215,7 +215,7 @@ qual_stats <- primer_stats$quality %>%
   )
 ```
 
-Assuming that the basecalling was run without adapter trimming (`--no-trim` Dorado option), there are always small tails of to remove before the primer starts:
+The following table shows the average trimmed amplicon length and the total read numbers for each amplicon. Also, there are always small tails at the ends before the primer starts (assuming `--no-trim` Dorado option, which is necessary).
 
 ```{r trim-stats, render=pander::pander}
 full_join(
@@ -243,7 +243,7 @@ full_join(
             'amplicon')
 ```
 
-A small part of the reads has tail lengths around the mean fragment length (or multiples of it), which suggests the presence of concatenated PCR products (not shown).
+Usuall, a small part of the reads has tail lengths around the mean fragment length (or multiples of it) due to the presence of concatenated PCR products.
 
 (ref:tail-stats) (**not shown**) Distribution of the primer trimmed tail lengths (*note the non-linear scale*)
 
@@ -280,7 +280,7 @@ ggplot(d, aes(length, fill=category, color=category)) +
 
 The quality filtering should remove highly errorneous sequencing reads, while still retaining enough reads for inferring the barcode sequences.
 
-According to Figure \@ref(fig:mismatch-stats), reads with many primer or sample index mismatches also tend to have lower quality scores. The default threshold of *2.5 expected errors per read* can be tweaked. With the current settings, reads with \>`r config$demux$error_threshold` errors and reads shorter than `r config$demultiplex$min_read_length` bp (`min_read_length` setting) are discarded. Figure \@ref(fig:readstats) may also help guiding the selection of the threshold.
+According to Figure \@ref(fig:mismatch-stats), reads with many primer or sample index mismatches also tend to have lower quality scores. With the current settings, reads with \>`r config$demux$error_threshold` errors (`error_threshold` setting) and reads shorter than `r config$demultiplex$min_barcode_length` bp (`min_barcode_length` setting) are discarded. Figure \@ref(fig:readstats) helps with determining the impact of the settings on the number of reads passing the filter.
 
 (ref:mismatch-stats) Mismatch statistics/quality statistics, based on the quality scores from the base-called FASTQ file. (a) Comparison of index/primer mismatches, colored by average read quality; (b/c) Distribution of expected errors per read, colored by primer/index mismatches.
 
@@ -371,7 +371,7 @@ ggplot(d.ee, aes(group, count, fill=category)) +
   guides(fill = guide_legend(ncol=4))
 ```
 
-# Clustering
+# Infer barcodes
 
 Before the DADA2 denoising, it is necessary to determine how the quality scores in the sequencing reads correlate with the substitution error rates. Usually, the relationship looks fairly log-linear, although there can be a plateau/increase at Q \> 40 (Figure \@ref(fig:dada2-errplot)).
 
@@ -385,27 +385,34 @@ dada2::plotErrors(dada_err) +
 
 From each of the de-multiplexed and filtered read files, a maximum of `r config$cluster$max_sample_depth` reads (`max_sample_depth` setting) are analyzed (Figure \@ref(fig:cluster-validation)a).
 
-The DADA2 denoising method relies on presence of **at least a few error-free reads** in the filtered Nanopore data. This should usually be the case with recent (R10.4) sequencing data, and assuming that amplicons are not extremely long. Specifically, the proportion of singletons[^1] has to be lower than 100 % (Figure \@ref(fig:cluster-validation)b), as duplicated sequences are likely to represent true sequences in the sample, while singletons often contain sequencing errors.
+The DADA2 denoising method relies on presence of **at least a few error-free reads** in the filtered Nanopore data. This should usually be the case with recent (R10.4) sequencing data, and assuming that amplicons are not extremely long. Specifically, the proportion of singletons[^1] has to be lower than 100 % (Figure \@ref(fig:cluster-validation)b), as duplicated sequences are the most likely to represent the true barcode sequences in the sample, while singletons often contain sequencing errors.
 
 [^1]: Singletons are sequences only present *once* in a sample (non-duplicated)
 
-The barcode clustering procedure automatically checks the read duplication, and switches from DADA2 denoising to fixed-threshold clustering if there are \< `r config$cluster$dada_min_identical` identical sequences or \< `r config$cluster$dada_min_n0` sequences without substitution errors (Figure \@ref(fig:cluster-validation)b and c; *cluster_fixed* method). The thresholds can be changed in `config.yaml` (`dada_min_identical` and `dada_min_n0`). In some cases, DADA2-denoised ASVs can be further split into two more or less equally abundant haplotypes (*dada_split* method in Figure \@ref(fig:cluster-validation)).
+The barcode clustering procedure automatically checks the read duplication, and switches from DADA2 denoising to fixed-threshold clustering (*cluster_fixed* method in figures) if there are \< `r config$cluster$dada_min_identical` identical sequences or \< `r config$cluster$dada_min_n0` sequences without substitution errors (`dada_min_identical` and `dada_min_n0` settings). This is mostly the case for low-depth samples with < reads (Figure \@ref(fig:cluster-validation)b-d). In some cases, DADA2-denoised ASVs can be further split into two more or less equally abundant haplotypes (*dada_split* method in Figure \@ref(fig:cluster-validation)).
 
 ```{r}
 seq_tab <- tar_read(cluster_seqtab_combined)
 ```
 
-(ref:cluster-validation) Details on the clustering, colored by clustering method. (a) Analyzed read depth of samples (up to `r config$cluster$max_sample_depth` reads); (b) Proportion of singleton reads in relation to sequencing depth; (c) Number of *identical* sequences supporting the dominant sequence of the top taxon, compared to its abundance. (d) Number of *sequences without substitutions* (but possibly some InDels) (`n0` reported by DADA2, not known for other methods). The vertical line indicates a sequencing depth threshold of `r config$report$low_abund_threshold` reads (`low_abund_threshold` in `config.yaml`).
+(ref:cluster-validation) Details on the clustering, colored by clustering method. (a) Analyzed read depth of samples (up to `r config$cluster$max_sample_depth` reads); (b) Proportion of singleton reads in relation to sequencing depth; (c) Number of *identical* sequences supporting the dominant sequence of the top taxon, compared to its abundance. (d) Number of *sequences without substitutions* (but possibly some InDels) = `n0` reported by DADA2, not known for other methods. The vertical line indicates a sequencing depth threshold of `r config$output$report$low_abund_threshold` reads (`low_abund_threshold` in *config.yaml*).
 
 ```{r cluster-validation, fig.width=6.7, fig.height=4.5, message=FALSE, warning=FALSE, fig.cap='(ref:cluster-validation)'}
 method_cols = c(dada='#1f78b4', dada_split='#561fb4',
                 cluster_fixed='#7fb128', 'other/unused indexes'='#ff7f00')
 
-d <- seq_tab %>% 
-  filter(!is.na(seq_tab$top_n_mapped)) %>% 
+d <- seq_tab %>%
+  filter(!is.na(seq_tab$top_n_mapped)) %>%
   mutate(
-    method = factor(ifelse(grepl('sample', category), top_seq_method, 'other/unused indexes'),
-                    names(method_cols))
+    method = factor(
+      ifelse(
+        grepl('sample', category),
+        top_seq_method,
+        'other/unused indexes'
+      ),
+      names(method_cols)
+    ),
+    top_seq_consensus_diffs = ifelse(grepl('dada', method), top_seq_consensus_diffs, NA)
   )
 
 method_scale = function(dir='vertical') list(
@@ -428,7 +435,7 @@ method_jitter <- list(
 )
 
 depth_scale = list(
-  geom_vline(xintercept = config$report$low_abund_threshold, color='grey'),
+  geom_vline(xintercept = config$output$report$low_abund_threshold, color='grey'),
   scale_x_log10()
 )
 
@@ -474,11 +481,11 @@ pn0 = ggplot(d, aes(top_n_mapped, top_n0,
   plot_annotation(tag_levels='a')
 ```
 
-Ambiguous bases in the reported sequence mostly appear in low-depth samples, where fixed-threshold clustering is applied (*cluster_fixed* method) and no further separation of haplotypes is attempted (Figure \@ref(fig:cluster-validation2)a/b). These ambiguities may be further inspected manually. They may result from either an unresolved mix of different haplotypes or other sequence polymorphisms, or possibly from sequencing errors (usually *homopolymers*, long stretches of the same base).
+Ambiguous bases in the reported sequence mostly appear in low-depth samples, where fixed-threshold clustering is applied (*cluster_fixed* method) and no further separation of haplotypes is attempted (Figure \@ref(fig:cluster-validation2)a/b). These ambiguities may be further inspected manually. They may result from either an unresolved mix of different haplotypes or other sequence polymorphisms, or possibly from sequencing errors.
 
 In rare cases, the alignment consensus does not match the inferred DADA2 ASV sequence (Figure \@ref(fig:cluster-validation2)c/d). These barcodes will have a *consensus-diffs* issue flag in the report, and the consensus sequence is reported (may be inspected manually, but usually the consensus should make sense).
 
-(ref:cluster-validation2) (a/b) Distribution of the ambiguous base count in the top consensus sequence (\< `r config$cluster$consensus_threshold * 100` % in alignment having the same base). (c/d) Number of mismatches between the DADA2 ASV and the consensus sequence. The vertical line indicates a sequencing depth threshold of `r config$report$low_abund_threshold` reads (`low_abund_threshold` in `config.yaml`).
+(ref:cluster-validation2) (a/b) Distribution of the ambiguous base count in the top consensus sequence (\< `r config$cluster$consensus_threshold * 100` % in alignment having the same base). (c/d) Number of mismatches between the DADA2 ASV and the consensus sequence. The vertical line indicates a sequencing depth threshold of `r config$output$report$low_abund_threshold` reads (`low_abund_threshold` setting).
 
 ```{r cluster-validation2, fig.width=6.7, fig.height=4.5, message=FALSE, warning=FALSE, fig.cap='(ref:cluster-validation2)'}
 group_limit = function(x, lim) factor(
@@ -527,11 +534,11 @@ mdepth = ggplot(d_dada, aes(n_reads, cons_diffs_,
 
 # Haplotypes / polymorphism
 
-The clustering procedure usually yields 1-2 abundant haplotype sequences from the target organism, and few rare/unspecific barcode sequences (Figure \@ref(fig:polymorphisms)a/b). In addition, there may be additional copies of the target barcode in the genomes. A fixed-threshold clustering at a similarity threshold of `r config$cluster$fixed_cluster_threshold * 100` % is done to distinguish the target organism from other organisms, which may also be present in the mix (e.g. contamination). If DNA was extracted from the tissue of multiple individuals, there might also be more than the two parental haplotypes. Polymorphisms with \< `r config$cluster$min_variant_freq * 100` % frequency in an organism group are removed.
+The clustering procedure usually yields 1-2 abundant haplotype sequences from the target organism, and few rare/unspecific barcode sequences (Figure \@ref(fig:polymorphisms)a/b). In addition, there may be additional copies of the target barcode in the genomes. A fixed-threshold clustering at a similarity threshold of `r config$cluster$fixed_cluster_threshold * 100` % is done (`fixed_cluster_threshold` setting) to distinguish the target taxon from other organisms, which may also be present in the mix (contamination, symbiotic partner). If DNA was extracted from the tissue of multiple individuals, there might also be more than the two parental haplotypes. Polymorphisms with \< `r config$cluster$min_variant_freq * 100` % frequency in an organism group are removed (`min_variant_freq` setting).
 
-The proportion of reads belonging to the final (probably specific) clusters is usually 50-100% at read depths \> 1000, but decreases with lower depths (Figure \@ref(fig:polymorphisms)c). Reasons can be sequencing errors (also in the sample indexes), as well as contamination.
+The proportion of reads belonging to the final (probably specific) clusters is usually 50-100% at read depths \> 1000 due to how the DADA2 clustering works, but decreases with lower depths or if dominant contamination is present (Figure \@ref(fig:polymorphisms)c).
 
-(ref:polymorphisms) (a/b) Distribution of putative polymporphic sequence numbers for the top organism in a sample; (c) Proportion of reads from the *top* organism group relative to the total analyzed read depth
+(ref:polymorphisms) (a/b) Distribution of sequence variant numbers for the top taxon in a sample; (c) Proportion of reads from the *top* organism group relative to the total analyzed read depth
 
 ```{r polymorphisms, fig.width=6.7, fig.height=4.5, message=FALSE, warning=FALSE, fig.cap='(ref:polymorphisms)'}
 # TODO: investigate/filter contaminants present in (almost) every sample
@@ -567,37 +574,17 @@ hhist + hdepth +
 
 # Taxonomic assignments
 
-Taxonomic names are assigned with the the SINTAX algorithm using a bootstrap confidence threshold of `r config$taxonomy$confidence_threshold * 100` %.
+Taxonomic names are assigned with the the SINTAX algorithm using a bootstrap confidence threshold of `r config$taxonomy$confidence_threshold * 100` % (`confidence_threshold` setting).
 
 > **Caution**: these automatic sequence-based assignments are not guaranteed to be correct, it is recommended to further validate them, e.g. using BLAST.
-
-Any blacklisted taxa (`known_contaminants` in `config.yaml`) are directly flagged as contaminants, and other barcodes in the same sample are preferred.
-
-Second, morphological identifications (morpho_taxon column in metadata) are compared to the automatic taxonomic assignments. From this, a **taxonomic overlap** is calculated, which is the *proportion of matching ranks in the taxonomic lineages* (as far as names are defined at these levels). The lineages are retrieved from the [GBIF backbone](https://doi.org/10.15468/39omei) taxonomy.
 
 ```{r assign-taxonomy, include=FALSE}
 seq_tab <- tar_read(taxonomy)$seq_tab
 ```
 
-A barcode sequence (more precisely, a `r opts$cluster$cluster_threshold * 100` % group) is *automatically* classified as contaminant if there exists another sequence (group), which has a better taxonomic overlap with the morphological identification. The overlap is assumed to be better if (i) there exists a less abundant taxon with the correct kingdom, or (ii) a taxon has has at least *`r config$taxonomy$contam_rank_delta` more consistent (matching) taxonomic ranks* in the GBIF lineage compared to the top taxon (undefined ranks excluded from the comparison). Figure \@ref(fig:tax-overlap) visualizes the final taxonomic assignments. The taxonomic overlap (Figure \@ref(fig:tax-overlap)b) should mostly be near 100% (bars on right side).
+Figure \@ref(fig:tax-overlap) summarizes the final taxonomic assignments. The taxonomic overlap (Figure \@ref(fig:tax-overlap)b) should mostly be near 100% (bars on right side).
 
-> **note**: the ranking may sometimes be incorrect, or if contaminants are too related to the target taxon, they may not automatically be flagged; a **manual investigation of the report** is highly recommended.
-
-`r if (any(seq_tab$has_contamination)) 'The following barcodes were identified to contain dominant comtamination:\n'`
-
-```{r render=pander::pander}
-has_seqs = seq_tab$n_reads > 0
-if (any(seq_tab$has_contamination)) {
-  cont = seq_tab[seq_tab$has_contamination, ]
-  cont$contaminants = sapply(cont$clustering, function(d) paste(unique(d$taxon[d$is_contaminant]), collapse=', '))
-  rownames(cont) <- NULL
-  cont %>% 
-    select(sample, morpho_taxon, `correct taxon`=top_seq_taxon, contaminants) %>% 
-    mutate(sample = stringr::str_trunc(sample, 30))
-}
-```
-
-(ref:tax-composition) Taxonomic composition (based on barcode sequences) by plate and amplicon
+(ref:tax-composition) Taxonomic composition (based on barcode sequences) by amplicon and plate
 
 ```{r tax-composition, warning=FALSE, fig.width=6.7, fig.height=4, fig.cap='(ref:tax-composition)'}
 abundant.lineages = names(head(sort(
@@ -639,7 +626,7 @@ ggplot(d, aes(as.factor(plate), fill=lineage)) +
         axis.text.x=element_text(angle=45, hjust=1, vjust=1, size=7))
 ```
 
-(ref:tax-overlap) Taxonomic overlap between the morphological and sequence-based taxonomic assignments (bars on right side near 100% overlap)
+(ref:tax-overlap) Histograms showing the distribution of the taxonomic overlap between provided (e.g. morphological) and sequence-based taxonomic assignments (between 0 and 100%).
 
 ```{r tax-overlap, warning=FALSE, fig.width=6.7, fig.height=1 + 0.5 * sqrt(length(unique(seq_tab$plate))), fig.cap='(ref:tax-overlap)'}
 d.ov <- d %>% 
@@ -658,12 +645,41 @@ ggplot(d.ov, aes(tax_overlap, fill=category)) +
         panel.border = element_rect(colour='black', size=0.5, fill=NA))
 ```
 
+## Contamination
+
+If taxonomic information was provided for the specimens (*taxon* column)
+
+Any blacklisted taxa (`known_contaminants` setting) are directly flagged as contaminants, and other barcodes in the same sample are preferred.
+
+Second, provided identifications (*taxon* column in metadata) are compared to the automatic taxonomic assignments. From this, a **taxonomic overlap** is calculated, which is the *proportion of matching ranks in the taxonomic lineages* (as far as names are defined at these levels). The lineages are retrieved from the [GBIF backbone](https://doi.org/10.15468/39omei) taxonomy.
+
+A taxon is *automatically* classified as contaminant if there exists another sequence (group), which has a better taxonomic overlap with the morphological identification. The overlap is assumed to be better if...
+
+- there exists a less abundant taxon with the correct kingdom
+- a taxon has has at least *`r config$taxonomy$contam_rank_delta` more consistent (matching) taxonomic ranks* in the GBIF lineage compared to the top taxon (`contam_rank_delta` setting; undefined ranks excluded from the comparison).
+
+> **note**: the ranking may sometimes be incorrect, or if contaminants are too related to the target taxon, they may not automatically be flagged; a **manual investigation of the report** is highly recommended.
+
+`r if (any(seq_tab$has_contamination)) 'The following samples were found to contain dominant comtamination:\n'`
+
+```{r render=pander::pander}
+has_seqs = seq_tab$n_reads > 0
+if (any(seq_tab$has_contamination)) {
+  cont = seq_tab[seq_tab$has_contamination, ]
+  cont$contaminants = sapply(cont$clustering, function(d) paste(unique(d$taxon[d$is_contaminant]), collapse=', '))
+  rownames(cont) <- NULL
+  cont %>% 
+    select(sample, taxon, `correct taxon`=top_seq_taxon, contaminants) %>% 
+    mutate(sample = stringr::str_trunc(sample, 30))
+}
+```
+
 
 # Comparison to known sequences
 
-In case of re-sequencing a specimen, there is the additional possibility of validating the result by calculating the number of differences (mismatches/gaps). Inconsistent barcode sequences might be investigated further. It is still possible, that e.g. the provided Sanger sequences have errors as well, it is best to also investigate the chromatograms in case of inconsistencies.
+In case of re-sequencing a specimen, there is the additional possibility of validating the result by calculating the number of differences (mismatches/gaps) (Figure \@ref(fig:known-seq-diffs). Known sequences are inserted in the *known sequence* column of the samples metadata table. Inconsistent barcode sequences might be investigated further. It is still possible, that e.g. the provided Sanger sequences have errors as well, it is best to also investigate the chromatograms in case of inconsistencies.
 
-(ref:known-seq-diffs) Mismatches to already known sequences (in case of re-sequencing). The vertical red line indicates a critical sequencing depth threshold of `r config$report$low_abund_threshold` reads.
+(ref:known-seq-diffs) Mismatches to already known sequences (in case of re-sequencing). The vertical red line indicates a critical sequencing depth threshold of `r config$output$report$low_abund_threshold` reads.
 
 ```{r known-seq-diffs, fig.width=5, fig.height=2.3, fig.cap='(ref:known-seq-diffs)'}
 d <- seq_tab[!is.na(seq_tab$top_seq_known_seq_diffs),]
@@ -687,7 +703,3 @@ if (nrow(d) > 0) {
     plot_annotation(tag_levels='a')
 }
 ```
-
-# Report
-
-The final results are written to an Excel document (`report.xlsx`) containing different sections besides the metadata already present in `meta.xlsx`. The meaning of different columns is explained in comments attached to the headers.

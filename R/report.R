@@ -108,7 +108,7 @@ create_report <- function(seq_tab,
     'indexes', 'data link'='link', 'sample', 'sample_type',
     'issues', '# seqs'='top_n_reads', '# ambig'='top_seq_consensus_ambigs',
     '# seqs'='n_reads', '% assigned'='target_cluster_frac',
-    'morpho_taxon', 'auto-lineage'='top_seq_short_lineage', 'auto-taxon'='top_seq_taxon', 'matching ranks',
+    'taxon', 'auto-lineage'='top_seq_short_lineage', 'auto-taxon'='top_seq_taxon', 'matching ranks',
     'seq'='known_sequence', 'diffs'='top_seq_known_seq_diffs',
     'comment'='final_comment'
   )
@@ -185,7 +185,7 @@ create_report <- function(seq_tab,
 
   headers <- list(
     Overview = list(rng=c('issues', 'target_cluster_frac'), bg='#e5f5e0'),
-    Taxonomy = list(rng=c('morpho_taxon', 'matching ranks'), bg='#deebf7'),
+    Taxonomy = list(rng=c('taxon', 'matching ranks'), bg='#deebf7'),
     `Known sequences` = list(rng=c('known_sequence', 'top_seq_known_seq_diffs'), bg='#fee0d2'),
     `Curation` = list(rng = c('final_comment', paste0('FA', n_curate)), bg='#ffedd5'),
     `Uniques` = list(rng = c('unq1', paste0('unq', n_curate)), bg='#efedf5'),
@@ -279,7 +279,7 @@ create_report <- function(seq_tab,
     '%s&"-"&%s&" "&%s&" / "&%s',
     ref(match('plate', cols), row_i, lock='col'),
     ref(match('well', cols), row_i, lock='col'),
-    ref(match('morpho_taxon', cols), row_i, lock='col'),
+    ref(match('taxon', cols), row_i, lock='col'),
     ref(match('top_seq_taxon', cols), row_i, lock='col')
   )
 
