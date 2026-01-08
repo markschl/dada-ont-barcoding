@@ -1,4 +1,6 @@
 
+#' Read sample metadata from Excel file
+#'
 #' Reads a sample table from an Excel metadata file and passes it on to [parse_sample_tab]
 #'
 #' @export
@@ -103,6 +105,9 @@ parse_sample_tab <- function(sample_tab) {
   sample_tab
 }
 
+#' Read primer information from Excel file
+#'
+#' Reads primer information from an Excel metadata file and passes it on to [parse_primer_tab]
 #' @export
 read_xlsx_primer_tab <- function(meta_file, sheet_name, ...) {
   primer_tab <- openxlsx2::read_xlsx(meta_file, sheet_name, na.strings = c(''))
@@ -205,6 +210,8 @@ parse_primer_tab <- function(primer_tab, amplicons = NULL) {
 
 #' Search and remove primers and sample indexes
 #'
+#' [do_trim_demux] is a wrapper function running [do_primer_search] and [do_demux] sequentially.
+#'
 #' @param fq_paths Character vector of FASTQ file paths (compressed or uncompressed)
 #' @param amplicon_primers Amplicon specification, as returned by [parse_primer_tab]
 #' @param sample_tab Sample table as returned by [parse_sample_tab]
@@ -226,9 +233,13 @@ parse_primer_tab <- function(primer_tab, amplicons = NULL) {
 #' removing about half of the trimmed sequences.
 #  The value may still be adjusted based on how Figures 4 and 5 in the HTML report.
 #'
-#' @details
-#' This function calls [do_primer_search] and [do_demux] sequentially.
+#' @returns A list of:
+#' - `seq_tab`: `sample_tab` with a `reads_path` column and additional rows
+#'   for samples found in the reads but not in the sample table
+#' - `trim_stats`: a list containing primer/index search statistics
+#'   (used in the HTML report)
 #'
+#' @details
 #' Requires [seqtool](https://github.com/markschl/seqtool) v0.4 or higher
 #' installed either system-wide (in `PATH`) or locally
 #' (provide path with `set_program_path('seqtool', 'path/to/st')`).
@@ -267,7 +278,20 @@ do_trim_demux <- function(fq_paths,
 
 #' Search and remove primer sequences
 #'
+#' @description
 #' Requires [seqtool](https://github.com/markschl/seqtool) v0.4 or higher
+#'
+#' See [do_trim_demux] for more details on the arguments
+#'
+#' @returns Returns trimmed FASTQ paths (Zstandard-compressed) and statistics:
+#' `list(trimmed_fq = c(...), stats = list(...))`. More FASTQ files
+#' are generated for reads without primers/indexes or reads that are too short
+#' or potential concatenated products.
+#'
+#' @details
+#' The function generates different FASTQ files in `out_dir`,
+#' whereby *trimmed.fastq.zst* contains "valid" reads with sample indexes in the
+#' sequence headers: `<id> fi=<fwd-idx-name> ri=<rev-idx-name>`
 #'
 #' @export
 do_primer_search <- function(fq_paths,
@@ -383,17 +407,19 @@ do_primer_search <- function(fq_paths,
 
 #' Group sequences by sample index combination
 #'
-#' The provided FASTQ file should contain the sample indexes in the sequence headers
-#' as follows: `<id> fi=<fwd-idx-name> ri=<rev-idx-name>` (the position in the header
-#' does not matter). Such FASTQ files are produced by [do_primer_search].
+#' @param primer_search_fq One or multiple paths from [do_primer_search]
+#' (`trimmed_fq` entry in the returned list).
 #'
-#' Requires [seqtool](https://github.com/markschl/seqtool) v0.4 or higher
 #'
 #' @returns `sample_tab` with a `reads_path` column and additional rows
 #' for samples found in the reads but not in the sample table
 #'
 #' @details
-#' The read files are named as follows: `fprimer-fidx--rprimer-ridx.fastq.gz`
+#' See [do_trim_demux] for details on the other arguments
+#'
+#' The read files in `out_dir` are named as follows: `fprimer-fidx--rprimer-ridx.fastq.gz`
+#'
+#' Requires [seqtool](https://github.com/markschl/seqtool) v0.4 or higher
 #'
 #' @export
 do_demux <- function(primer_search_fq,
@@ -582,7 +608,7 @@ do_combine_alignments <- function(seq_tab, aln_dir, outdir, top_only = FALSE) {
 }
 
 
-#' Propagate information from nested cluster tables to the main seq_tab
+# Propagate information from nested cluster tables to the main seq_tab
 propagate_data <- function(seq_tab, extra_seq_cols = NULL) {
   # Propagate sample-level attributes to seq_tab
   attr_cols <- c('n_reads', 'n_singletons', 'omega_a', 'has_seq_comparison')
@@ -638,8 +664,13 @@ propagate_data <- function(seq_tab, extra_seq_cols = NULL) {
 
 #' Run the taxonomy assignment and compare with provided taxonomic names of specimens
 #'
+#' This function runs `do_assign_taxonomy` and `do_compare_taxonomy` sequentially
+#' (functions not documented).
+#'
+#' @rdname do_taxonomy
+#'
 #' @param seq_tab Sequence table as returned by [do_infer_all_barcodes] or downstream functions
-#' @param db_file UTAX-formatted sequence database (optionally compressed);
+#' @param db_file Sequence database with UTAX-formatted headers (optionally compressed);
 #' see [load_taxdb]
 #' @param gbif_cache_file Path to cache file for saving GBIF taxonomy lookup results
 #' (may be shared across datasets) (see [get_gbif_taxa])
@@ -657,6 +688,7 @@ propagate_data <- function(seq_tab, extra_seq_cols = NULL) {
 #' "correct" taxon in the mix, and the top taxon being down-ranked
 #'
 #' @returns
+#' `do_assign_compare_taxonomy` returns
 #' `seq_tab`, with the nested data frames in `clustering` **reordered** as such
 #' that dominant taxa flagged as contamination are moved to the bottom.
 #' The following new columns are added:
@@ -681,7 +713,6 @@ propagate_data <- function(seq_tab, extra_seq_cols = NULL) {
 #' *top_seq_taxon*, *top_seq_short_lineage*
 #'
 #' @details
-#'
 #' Sequences are flagged as contamination (*is_contaminant*) if:
 #' - there exists a less abundant taxon with the correct kingdom
 #'   (compared to *taxon*, GBIF name comparison guided by `likely_kingdom`)
@@ -721,8 +752,7 @@ do_assign_compare_taxonomy <- function(seq_tab,
   seq_tab
 }
 
-#' Auto-assign taxonomic names/lineages
-#'
+#' @rdname do_taxonomy
 #' @export
 do_assign_taxonomy <- function(seq_tab,
                                db_file,
@@ -816,7 +846,7 @@ do_assign_taxonomy <- function(seq_tab,
   )
 }
 
-
+#' @rdname do_taxonomy
 #' @export
 do_compare_taxonomy <- function(seq_tab,
                                 seq_lineages,

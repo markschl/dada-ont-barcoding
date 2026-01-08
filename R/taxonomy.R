@@ -49,7 +49,6 @@ load_taxdb <- function(db_url,
   load_fn(db_url, db_file, tax_urls=db_tax_url)
 }
 
-#' @export
 load_unite <- function(url, outfile, ...) {
   stopifnot(length(url) == 1)  # multiple files not implemented
   download.file(url, 'unite.tar.gz', timeout = 1200, quiet = TRUE)
@@ -69,7 +68,6 @@ load_unite <- function(url, outfile, ...) {
   invisible(file.remove('unite.tar.gz'))
 }
 
-#' @export
 load_qiime_fasta <- function(urls, outfile, tax_urls=NULL, ...) {
   stopifnot(is.null(tax_urls))  # taxonomy expected in FASTA file
   dbfile <- 'taxdb_tmp.gz'
@@ -81,7 +79,6 @@ load_qiime_fasta <- function(urls, outfile, tax_urls=NULL, ...) {
   invisible(file.remove(dbfile))
 }
 
-#' @export
 load_qiime_qza <- function(urls, outfile, tax_urls=NULL, ...) {
   db_dir <- 'taxdb_tmp'
   taxdb_dir <- 'taxdb_tmp_tax'
@@ -117,10 +114,8 @@ load_qza <- function(url, outdir, fname) {
 }
 
 
-#' Convert QIIME-style lineages in sequence names (separated from sequence IDs by space)
-#' to UTAX-style taxonomic lineages
-#'
-#' @export
+# Convert QIIME-style lineages in sequence names (separated from sequence IDs by space)
+# to UTAX-style taxonomic lineages
 convert_utax <- function(seqs,
                          taxonomy = NULL,
                          unknown_pat = '(undefined|unknown|incertae[_ ]sedis)',
@@ -226,7 +221,6 @@ assign_taxonomy_sintax <- function(seq_file,
 }
 
 
-#' @export
 parse_utax_lineages <- function(lineages) {
   lineages <- strsplit(as.character(lineages), ',', fixed = TRUE)
   lineages <- lapply(lineages, function(l) {
@@ -254,7 +248,6 @@ parse_utax_lineages <- function(lineages) {
   lineages
 }
 
-#' @export
 make_taxon_name <- function(lineages) {
   for (rank in c('genus', 'species')) {
     if (!(rank %in% colnames(lineages))) {
@@ -284,12 +277,13 @@ normalize_taxa <- function(taxa) {
   gsub('Fungus\\b', 'Fungi', t)
 }
 
-#' Match a taxonomic name/lineage against the GBIF taxonomy
+#' Match taxonomic names/lineages against the GBIF taxonomy
 #'
-#' This function uses the GBIF web API (accessed through [rgbif](https://docs.ropensci.org/rgbif/index.html))
+#' This function uses the GBIF web API
+#' (through [rgbif](https://docs.ropensci.org/rgbif/reference/name_backbone_checklist.html))
 #' to retrieve the currently accepted taxon name and lineage
-#' according to the GBIF [backbone taxonomy](https://www.gbif.org/dataset/d7dddbf4-2cf0-4f39-9b2a-bb099caae36c)
-#' (see also species lookup)[https://www.gbif.org/tools/species-lookup].
+#' according to the GBIF
+#' [backbone taxonomy](https://www.gbif.org/dataset/d7dddbf4-2cf0-4f39-9b2a-bb099caae36c).
 #'
 #' @param taxa A character vector of taxonomic names or a matrix/data frame with lineages;
 #' columns must have rank names and the first column should be *name*, containing

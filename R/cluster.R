@@ -595,24 +595,24 @@ dada_learn_errors <- function(fq_paths, omega_a = 1e-20, cores = 1, ...) {
 
 }
 
-#' Run DADA2 denoising
-#'
-#' Runs DADA2 on a FASTQ file, removes chimeras and and returns
-#' an abundance-sorted data frame of ASVs with some additional information
-#'
-#' @param x FASTQ file path or *derep-class* object
-#' @param dada_err error information returned by [dada_learn_errors]
-#' @param max_members do random subsampling of overly large ASVs to
-#' the specified number of sequences
-#' @param singleton_threshold by default, singletons cannot form a new cluster,
-#' but for very low-depth samples (< N duplicates of any sequence),
-#' DETECT_SINGLETONS is turned on (see [dada2::setDadaOpt]).
-#' This increases sensitivity with InDel-rich Nanopore data and prevents that
-#' a large proportion of sequences are discarded.
-#' @param ... Arguments passed to [dada2::dada]
-#'
-#' @returns a data frame with the following columns:
-#' - (TODO: document)
+# Run DADA2 denoising
+#
+# Runs DADA2 on a FASTQ file, removes chimeras and and returns
+# an abundance-sorted data frame of ASVs with some additional information
+#
+# @param x FASTQ file path or *derep-class* object
+# @param dada_err error information returned by [dada_learn_errors]
+# @param max_members do random subsampling of overly large ASVs to
+# the specified number of sequences
+# @param singleton_threshold by default, singletons cannot form a new cluster,
+# but for very low-depth samples (< N duplicates of any sequence),
+# DETECT_SINGLETONS is turned on (see [dada2::setDadaOpt]).
+# This increases sensitivity with InDel-rich Nanopore data and prevents that
+# a large proportion of sequences are discarded.
+# @param ... Arguments passed to [dada2::dada]
+#
+# @returns a data frame with the following columns:
+# - (TODO: document)
 dada2_denoise <- function(x,
                           dada_err,
                           cores = 1,
@@ -695,17 +695,19 @@ dada2_denoise <- function(x,
 }
 
 
-#' Attempts splitting sequence cluster into two haplotypes.
-#' Requires the output of dada2_denoise and ambig_consensus,
-#' which is a data frame with these columns:
-#' - id
-#' - top_uniques
-#' - consensus_ambigs
-#'
-#' Splitting is done if the sum of the consensus ambiguities of the two resulting
-#' sequence variants is smaller than the number of consensus ambiguities of the parent.
-#'
-#' Overwrites the existing BAM files and FASTA references in 'prefix'.
+# Attempts splitting sequence cluster into two haplotypes.
+#
+# @param reads XStringQuality object
+# @param d data frame returned by dada2_denoise -> ambig_consensus with these columns
+# - id
+# - top_uniques
+# - consensus_ambigs
+#
+# @details
+# Splitting is done if the sum of the consensus ambiguities of the two resulting
+# sequence variants is smaller than the number of consensus ambiguities of the parent.
+#
+# Overwrites the existing BAM files and FASTA references in 'prefix'.
 try_split_haplotypes <- function(reads,
                                  d,
                                  prefix,
@@ -861,7 +863,7 @@ try_split_haplotypes <- function(reads,
   d
 }
 
-#' Merges multiple BAM files, optionally selecting reference IDs from them
+# Merges multiple BAM files, optionally selecting reference IDs from them
 subset_combine_bam <- function(out_prefix,
                                sel_list,
                                cores = 1,
@@ -967,9 +969,9 @@ subset_combine_bam <- function(out_prefix,
   outfiles
 }
 
-#' Run 'samtools reheader' to change the reference names.
-#' Also allows removing \@PG entries, which may contain some file paths
-#' from the machine on which the clustering was run.
+# Run 'samtools reheader' to change the reference names.
+# Also allows removing \@PG entries, which may contain some file paths
+# from the machine on which the clustering was run.
 rename_bam_refs <- function(prefix,
                             out_prefix,
                             id_map,
@@ -1103,18 +1105,22 @@ ambig_consensus <- function(seqs,
 }
 
 
-#' Resolve N-ambiguities in the consensus if surrounded by a homopolymer stretch,
-#' replacing them with the corresponding reference sequence
-#' (which is assumed to be the most likely true sequence)
+#' Attempt at "fixing" the consensus sequence in a homopolymer region
 #'
 #' @param cons_seq the consensus
 #' @param ref_seq the reference sequence (there should be some confidence
 #' that it is correct)
 #' @param min_homopoly_len minimum homopolymer length to check and fix
 #'
-#' @returns data frame(consensus, n_adjusted = # "fixed" homopolymers)
+#' @returns a data frame with these columns:
+#' - *consensus*: the "fixed" consensus sequence
+#' - *n_adjusted* the number of "fixed" homopolymer stretches
 #'
 #' @details
+#' Resolves N-ambiguities in the consensus if surrounded by a homopolymer stretch,
+#' replacing them with the corresponding reference sequence
+#' (which is assumed to be the most likely true sequence)
+#'
 #' Ns are usually found on the left side (or near it), as minimap2 tends to
 #' left-align gaps, and if there is an ambiguous situation (base + gap), the
 #' consensus becomes an N.
@@ -1122,16 +1128,16 @@ ambig_consensus <- function(seqs,
 #' 1. A consensus/reference pairwise alignment is done
 #' 2. The leftmost N is identified
 #' 3. The first non-N base downstream (right) of this N is assumed to be
-#'    the repeated base (likely true due to left-aligned gaps)
+#'    the repeated base (likely true if gaps are left-aligned).
+#'    Jump to 7. if none is found.
 #' 4. The longest stretch of the given base/N/gaps is searched in the aligned
 #'    consensus
-#' 5. The given range is checked in the aligned reference: if it is only composed
-#'    of the given base and gaps, then the aligned consensus sequence is replaced
-#'    with the aligned reference
-#' 6. Go back to 2., searching for the next N (stop if none)
+#' 5. If the aligned reference contains only the given base and gaps
+#'    within the range identified in 4., then the consensus sequence
+#'    is replaced with the aligned reference
+#' 6. Go back to 2., searching for the next N
 #' 7. Remove all gaps from the consensus and return this sequence
 #'
-#' @export
 fix_homopolymers <- function(cons_seq, ref_seq, min_homopoly_len = 6) {
   # function for finding homopolymer runs at a specific position
   find_run <- function(x, values, at) {
@@ -1231,9 +1237,9 @@ bam_to_map <- function(bam_file, samtools = 'samtools') {
   setNames(out[[2]], out[[1]])
 }
 
-#' Fixed-threshold clustering (single-linkage by default)
-#'
-#' The clustering is done with [DECIPHER::Clusterize].
+# Fixed-threshold clustering (single-linkage by default)
+#
+# The clustering is done with [DECIPHER::Clusterize].
 cluster_fixed <- function(seqs,
                          threshold,
                          min_coverage = 0.8,

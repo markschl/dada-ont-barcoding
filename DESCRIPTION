@@ -1,6 +1,6 @@
 Package: DadaNanoBC
 Type: Package
-Title:  DADA2-Based Pipeline for Infering DNA Barcodes from Nanopore Sequence Data 
+Title: DADA2-Based Pipeline for Infering DNA Barcodes from Nanopore Sequence Data 
 Version: 0.1.0
 Authors@R: c(
     person(
@@ -11,6 +11,7 @@ Authors@R: c(
   )
 Description: This R-based pipeline infers specimen barcodes from Nanopore sequencing data with multiplexed samples.
     It includes functions for automatic taxonomic assignments and taxonomy-based recognition of contaminants.
+URL: https://markschl.github.io/DadaNanoBC/
 License: MIT
 Encoding: UTF-8
 LazyData: true

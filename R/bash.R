@@ -10,8 +10,8 @@ require_bash <- function() {
   .env$bash_present <- TRUE
 }
 
-#' Run a command in Bash, which should work on Linux, OS-X and Windows WSL
-#' **Note**: assuming **no** spaces in arguments (no spaces in paths!)
+# Run a command in Bash, which should work on Linux, OS-X and Windows WSL
+# **Note**: assuming **no** spaces in arguments (no spaces in paths!)
 run_bash <- function(cmd, stdout = '', stderr = '', ...) {
   if (is.null(.env$bash_present)) {
     require_bash()
@@ -30,7 +30,11 @@ run_bash <- function(cmd, stdout = '', stderr = '', ...) {
   rv
 }
 
-
+#' Set the path to one or more programs
+#'
+#' @examples
+#' set_program_path(samtools = '/path/to/samtools', minimap2 = '/path/to/minimap2')
+#'
 #' @export
 set_program_path <- function(...) {
   dots <- list(...)

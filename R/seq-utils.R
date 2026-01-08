@@ -17,8 +17,8 @@ read_dna <- function(seq_file, ...) {
   Biostrings::readDNAStringSet(seq_file, ...)
 }
 
-#' Does a pairwise alignment between pairs of sequences
-#' (DECIPHER::AlignPairs with some default settings)
+# Does a pairwise alignment between pairs of sequences
+# (DECIPHER::AlignPairs with some default settings)
 pairwise_align <- function(seq1,
                            seq2,
                            type = 'values',
@@ -37,10 +37,10 @@ pairwise_align <- function(seq1,
   )
 }
 
-#' Extracts the number of mismatches and pattern/subject gaps
-#' from a DECIPHER::AlignPairs result.
-#' Sets all values to Inf if the overlap length relative to 'seq1'
-#' is lower than 'min_overlap'
+# Extracts the number of mismatches and pattern/subject gaps
+# from a DECIPHER::AlignPairs result.
+# Sets all values to Inf if the overlap length relative to 'seq1'
+# is lower than 'min_overlap'
 get_aln_stats <- function(aln,
                           min_overlap = 0.5,
                           free_end_gaps = FALSE,
