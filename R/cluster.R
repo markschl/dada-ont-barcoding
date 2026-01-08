@@ -1192,7 +1192,7 @@ fix_homopolymers <- function(cons_seq, ref_seq, min_homopoly_len = 6) {
         # the reference sequence must only have the given base or gaps at this location
         is_pure <- all(ref_sub == sel_base_ascii | ref_sub == gap_ascii)
         if (is_pure && n_sel_base >= min_homopoly_len) {
-          stopifnot(cons[rng[1] + (ref_rng[1]:ref_rng[2]) - 1] %in% c(n_ascii, gap_ascii, sel_base_ascii))
+          stopifnot(cons[rng[1]:rng[2]] %in% c(n_ascii, gap_ascii, sel_base_ascii))
           stopifnot(length(cons[rng[1]:rng[2]]) == length(ref_sub))
           cons[rng[1]:rng[2]] <- ref_sub
           n_adjusted <- n_adjusted + 1
