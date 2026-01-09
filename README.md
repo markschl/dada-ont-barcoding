@@ -4,12 +4,15 @@ This R package provides functions for:
 
 - *sample demultiplexing* of base-called Nanopore sequencing data 
 - inferring specimen *barcode sequences* using a [DADA2](https://benjjneb.github.io/dada2)-based
-  strategy to accurately resolve haplotypes/polymorphic sequences
+  [clustering strategy](https://markschl.github.io/DadaNanoBC/articles/workflow.html#clustering)
+  to accurately resolve haplotypes/polymorphic sequences
 - automatic *taxonomic assignents* and recognition (down-ranking) of contaminant taxa
 - detailed output files (comprehensive Excel table for curation, HTML report, BAM alignment files)
 
 A fully-fledged [targets](https://books.ropensci.org/targets) pipeline connects
 these features to a comparehensive workflow.
+
+[See here for a comprehensive explanation](https://markschl.github.io/DadaNanoBC/articles/workflow.html)
 
 ## What type of data does it work with?
 
@@ -97,14 +100,15 @@ targets::tar_make()
 
 Some more files will appear in the analysis directory:
 
-- *report.html* ([example report](https://markschl.github.io/DadaNanoBC/example-report.html)):
+- *report.html* ([example report](https://markschl.github.io/DadaNanoBC/analysis-example.html)):
   detailed HTML report, useful for troubleshooting
 - *report.xlsx*: Excel report with sequences and taxonomic assignments, which can be inspected for issues (see [curation](https://markschl.github.io/DadaNanoBC/articles/curation.html))
 - *top_alignments* (and/or *alignments*, *separate_alignments* depending on configuration):
   aligned sequencing reads in BAM format, may be imported into sequence viewing/editing software
   such as Geneious/CLC Workbench/UGENE/IGV, etc.
 - *tmp*: contains temporary (but sometimes useful) data such as the demultiplexed FASTQ sample files
-  (sometimes *separate_alignments* with many small BAM files, depending on the configuration)
+  (sometimes *separate_alignments* with many small BAM files, depending on the configuration);
+  if not needed you may delete the files
 
 After inspecting the HTML report and going through the Excel report, sequences can be exported as [detailed in the curation tutorial](https://markschl.github.io/DadaNanoBC/articles/curation.html).
 
@@ -183,3 +187,4 @@ export DadaNanoBC_vsearch=~/Downloads/vsearch-2.30.2-linux-x86_64/bin/vsearch
 - [Srivathsan & Meier (2024)](https://doi.org/10.1007/978-1-0716-3581-0_14)
 - [Hebert et al. (2024)](https://doi.org/10.1111/1755-0998.14028) barcoded up to 100k samples with a single MinION run.
 - [ONT barcoding efforts by the MycoMap network](https://www.researchgate.net/publication/393048029_Approaching_Full-Scale_DNA_Barcoding_for_North_American_Macrofungi_Highlights_from_the_MycoMap_Network) (see also [methods description](https://dx.doi.org/10.17504/protocols.io.dm6gpbm88lzp/v4))
+  (software used: [NGSpeciesID](https://github.com/ksahlin/NGSpeciesID))

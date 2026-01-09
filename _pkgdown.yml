@@ -1,0 +1,13 @@
+url: https://markschl.github.io/DadaNanoBC/
+template:
+  bootstrap: 5
+  light-switch: true
+  bootswatch: cosmo
+
+navbar:
+  structure:
+    left: [intro, reference, articles, example-report]
+  components:
+    example-report:
+      text: "Example Report"
+      href: analysis-example.html

@@ -12,3 +12,4 @@ docs/
 .venv/
 docs/
 inst/doc/
+!_pkgdown.yml
