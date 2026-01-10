@@ -1,8 +1,4 @@
 
-.env <- new.env(parent = emptyenv())
-.env$bash_present <- NULL
-.env$programs <- list()
-
 require_bash <- function() {
   if (Sys.which('bash') == '') {
     stop('The Bash shell was not found. On Windows, WSL2 is needed (https://learn.microsoft.com/en-us/windows/wsl/install)')
@@ -36,43 +32,20 @@ run_bash_script <- function(script, args, ...) {
   run_bash(c(script, args), ...)
 }
 
-#' Set the path to one or more programs
-#'
-#' @examples
-#' set_program_path(samtools = '/path/to/samtools', minimap2 = '/path/to/minimap2')
-#'
-#' @export
-set_program_path <- function(...) {
-  dots <- list(...)
-  if (length(dots) == 0)
-    return()
-  names(dots) <- paste0('DadaNanoBC', names(dots))
-  do.call(options, dots)
-  invisible(NULL)
-}
-
-find_program <- function(program, full_name = NULL) {
-  path <- .env$programs[[program]]
-  if (!is.null(path)) {
-    return(path)
-  }
-  full_name <- full_name %||% program
-  path <- getOption(
-    paste0('DadaNanoBC.', full_name),
-    Sys.which(program)
-  )
-  if (!nzchar(path)) {
-    path <- Sys.getenv(paste0('DadaNanoBC_', full_name))
+find_program <- function(program) {
+  path <- get_opt(program)
+  if (is.null(path)) {
+    path <- Sys.which(program)
     if (!nzchar(path)) {
       return(NULL)
     }
+    .env$opts[[program]] <- path
   }
-  .env$programs[[program]] <- path
   path
 }
 
 get_program <- function(program, full_name=NULL) {
-  path <- find_program(program, full_name = full_name)
+  path <- find_program(program)
   if (is.null(path))
     stop(sprintf(paste(
       "The program '%s' was not found.",
@@ -104,7 +77,7 @@ check_system_requirements <- function() {
     )
   )
 
-  paths <- lapply(programs, function(p) find_program(p$name, full_name = p$full_name))
+  paths <- lapply(programs, function(p) find_program(p$name))
   missing <- sapply(paths, is.null)
 
   if (any(!missing)) {
@@ -137,5 +110,7 @@ check_system_requirements <- function() {
       sep = '\n'
     )
     stop('Some programs not found!')
+  } else {
+    message('All programs found!')
   }
 }

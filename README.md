@@ -2,23 +2,23 @@
 
 This R package provides functions for:
 
-- *sample demultiplexing* of base-called Nanopore sequencing data 
-- inferring specimen *barcode sequences* using a [DADA2](https://benjjneb.github.io/dada2)-based
+- **sample demultiplexing** of base-called Nanopore sequencing data 
+- inferring specimen **barcode sequences** using a [DADA2](https://benjjneb.github.io/dada2)-based
   [clustering strategy](https://markschl.github.io/DadaNanoBC/articles/workflow.html#clustering)
   to accurately resolve haplotypes/polymorphic sequences
-- automatic *taxonomic assignents* and recognition (down-ranking) of contaminant taxa
+- automatic **taxonomic assignents** and recognition (down-ranking) of contaminant taxa
 - detailed output files (comprehensive Excel table for curation, HTML report, BAM alignment files)
 
-A fully-fledged [targets](https://books.ropensci.org/targets) pipeline connects
-these features to a comparehensive workflow.
-
 [See here for a comprehensive explanation](https://markschl.github.io/DadaNanoBC/articles/workflow.html)
+
+A fully-fledged [{targets}](https://books.ropensci.org/targets) pipeline is provided for simple
+execution of a standard workflow (see [below](#running-the-targets-pipeline)).
 
 ## What type of data does it work with?
 
 - *Basecalled* amplicon reads with sample-specific tags attached to both ends
   (dual-indexed)
-- Sufficient reads of sufficient quality (R10.4 chemistry)
+- Reads of sufficient quality (R10.4 chemistry)
 - Amplicon lengths of 0.5-1.5kb have been successfully tested
 - Works with fixed- and variable-length amplicons from different taxonomic groups
   that can be multiplexed and analyzed separately
@@ -29,20 +29,13 @@ these features to a comparehensive workflow.
 
 - An UNIX environment (Linux, OS X or Windows with WSL2) with *Bash*
 - An [R](https://cran.r-project.org) installation
-- Some functions rely on third-party command-line programs:
-  [seqtool](https://github.com/markschl/seqtool) for primer trimming/demultiplexing,
-  [samtools](https://www.htslib.org) and [minimap2](https://github.com/lh3/minimap2)
-  for dealing with alignments and 
-  [VSEARCH](https://github.com/torognes/vsearch) for sequence-based taxonomic assignments
-  (see [installation of programs](#installation-of-programs))
-
-The package can always be installed; error messages may appear when calling
-functions that rely on missing components.
+- Four command-line programs (see [required software](#required-software));
+  the package can always be installed without these, but error messages will appear
+  when calling functions that rely on missing components.
 
 If [basecalling](https://nanoporetech.com/document/data-analysis#basecalling-overview)
 of the Nanopore data has not yet been done: an Nvidia GPU with Cuda support
 (details in [basecalling tutorial](basecalling.md)).
-
 
 ## Preparation: lab work and basecalling
 
@@ -51,44 +44,51 @@ of the Nanopore data has not yet been done: an Nvidia GPU with Cuda support
 2. [PCR, library preparation and sequencing](https://markschl.github.io/DadaNanoBC/articles/lab.html)
 3. [Basecalling](https://markschl.github.io/DadaNanoBC/articles/basecalling.html)
 
-## Running the pipeline
-
-In the `R` console, install the necessary packages and initialize the pipeline within the desired directory.
+## Installing and using the package
 
 ```r
 devtools::install_github("markschl/DadaNanoBC")
-install.packages(c("targets", "tarchetypes", "crew"))
+```
+
+The package documentation is [found here](https://markschl.github.io/DadaNanoBC).
+
+The package provides a mix of lower and higher level
+[functions](https://markschl.github.io/DadaNanoBC/reference/index.html),
+The core clustering function is [infer_barcode](https://markschl.github.io/DadaNanoBC/reference/infer_barcodes.html)
+(detailed [explanation here](https://markschl.github.io/DadaNanoBC/articles/workflow.html#clustering)).
+The high-level pipeline functions all have names starting with `do_`
+(e.g. [do_trim_demux](https://markschl.github.io/DadaNanoBC/reference/do_trim_demux.html)).
+
+## Running the {targets} pipeline
+
+In the `R` console (for running in *Bash*, see [below](#running-in-the-bash-console)):
+
+```r
 setwd("path/to/pipeline")
 DadaNanoBC::init_pipeline()
 ```
 
-Some files are created:
+Some files are created, some need to be still placed
 
 ```
 path/to/pipeline/
- ├─ _targets.R               Pipeline R code; execute with targets::tar_make()
- ├─ infer_barcodes           Script to execute the pipeline from Bash
+ ├─ _targets.R               Pipeline R code
  └─ analysis/
-    ├─ meta-ITS5-ITS4.xlsx   Metadata template (to be modified and renamed to 'meta.xlsx')
-    ├─ config.yaml           Pipeline configuration (to be modified)
-    └─ reads.fastq.gz        (base-called nanopore sequences to be placed here)
+    ├─ meta-ITS5-ITS4.xlsx   Metadata template (modify & rename to 'meta.xlsx')
+    ├─ config.yaml           Pipeline configuration (modify)
+    └─ reads.fastq.gz    <- Place base-called nanopore sequences here
 ```
 
-There may also be warnings about missing software (see also [installation of programs](#installation-of-programs)).
+There may also be warnings about missing software, which have to be handled
+(see [required software](#required-software)).
 
 Next:
 
-- Modify the example metadata file `meta-ITS5-ITS4.xlsx` to contain your primer sequences and sample metadata, and rename it to `meta.xlsx`
+- Modify the example metadata file `meta-ITS5-ITS4.xlsx` to contain your primer sequences and sample metadata, and rename it to **meta.xlsx**
 - Copy or move your [base-called](https://markschl.github.io/DadaNanoBC/articles/basecalling.html)
-  sequencing reads to `reads.fastq.gz`
-- Adapt `config.yaml` to your needs; at the minimum, the 'taxonony' section needs to contain the correct taxonomic database.
-
-> *Note*: Consider running the pipeline at reduced read depth to check the data
-> maybe adjust some settings afterwards. Inspect `report.html`
-
-> *Note 2* Some settings such as a custom analysis directory, the number of parallel workers or program paths
-> are configured using `r Sys.setenv(DadaNanoBC_<setting> = ...)`. You may as well edit the `_targets.R`
-> file and modify some options below the *Pipeline definition* header.
+  sequencing reads to **reads.fastq.gz**
+- Adapt **config.yaml** to your needs; at the minimum, the *taxonony* section needs to contain the correct taxonomic database.
+  > Consider starting with a reduced read depth as in the example configuration (`max_sample_depth`/`max_contam_sample_depth`)
 
 Run the pipeline:
 
@@ -96,40 +96,77 @@ Run the pipeline:
 targets::tar_make()
 ```
 
-## Output
+> *Optional*: Modify the number of parallel processes before calling `tar_make`: `Sys.setenv('DadaNanoBC_WORKERS' = 8)`
+
+### Output
 
 Some more files will appear in the analysis directory:
 
-- *report.html* ([example report](https://markschl.github.io/DadaNanoBC/analysis-example.html)):
+- **report.html** ([example report](https://markschl.github.io/DadaNanoBC/analysis-example.html)):
   detailed HTML report, useful for troubleshooting
-- *report.xlsx*: Excel report with sequences and taxonomic assignments, which can be inspected for issues (see [curation](https://markschl.github.io/DadaNanoBC/articles/curation.html))
-- *top_alignments* (and/or *alignments*, *separate_alignments* depending on configuration):
+- **report.xlsx**: Excel report with sequences and taxonomic assignments, which can be inspected for issues (see [curation](https://markschl.github.io/DadaNanoBC/articles/curation.html))
+- **separate_alignments** (and/or *top_alignments*, *alignments* depending on configuration):
   aligned sequencing reads in BAM format, may be imported into sequence viewing/editing software
   such as Geneious/CLC Workbench/UGENE/IGV, etc.
-- *tmp*: contains temporary (but sometimes useful) data such as the demultiplexed FASTQ sample files
+- **tmp**: contains temporary (but sometimes useful) data such as the demultiplexed FASTQ sample files
   (sometimes *separate_alignments* with many small BAM files, depending on the configuration);
   if not needed you may delete the files
 
-After inspecting the HTML report and going through the Excel report, sequences can be exported as [detailed in the curation tutorial](https://markschl.github.io/DadaNanoBC/articles/curation.html).
+> Inspect the HTML report for anomalies, maybe adjust some other settings then re-run with at higher depth (adjust/remove `max_sample_depth`/`max_contam_sample_depth`)
+
+### Curation
+
+Excel report contains sequences and issue flags, which might have to be addressed before exporting the sequences.
+
+[See curation tutorial](https://markschl.github.io/DadaNanoBC/articles/curation.html)
+
+### Running a different analysis
+
+Prepare another directory with an appropriate `meta.xlsx`, `reads.fastq.gz` and `config.yaml`. Then, set the path and run the analysis. Taxonomic databases and other files in the *taxdb* directory is reused.
+
+```r
+Sys.setenv('DadaNanoBC_ANALYSIS_DIR' = 'path/to/dir')
+targets::tar_make()
+```
 
 ## Running in the bash console
 
-Instead of `targets::tar_make()`, there is also a script to execute the pipeline from the Bash console.
-It expects the path to the analysis directory containing `meta.xlsx`, `reads.fastq.gz` and `config.yaml`,
-and optionally also the number of workers:
+Install the package if not already done
 
 ```sh
-./infer_barcodes analysis_dir [workers]
+Rscript -e 'devtools::install_github("markschl/DadaNanoBC")'
 ```
 
-This example runs the analysis in the default *analysis* directory with 8 parallel workers:
+Initialize a directory where the pipeline is run
 
 ```sh
 cd path/to/pipeline
-./infer_barcodes analysis 8
+Rscript -e 'DadaNanoBC::init_pipeline(bash = TRUE)'
 ```
 
-## Installation of programs
+Then make sure there are the files `meta.xlsx`, `reads.fastq.gz` and `config.yaml` present in the analysis directory
+as described [above](#running-the-targets-pipeline).
+
+Run the pipeline (for the default *analysis* directory, may be [changed](#running-a-different-analysis)):
+
+```sh
+./infer_barcodes analysis
+```
+
+Additional settings can be added afterwards, as in this more realistic example (see also [custom program location](#custom-program-location)):
+
+```sh
+cd path/to/pipeline
+./infer_barcodes analysis WORKERS=8 vsearch=path/to/vsearch
+```
+
+## Required software
+
+The following tools are required:
+- [seqtool](https://github.com/markschl/seqtool) for primer trimming/demultiplexing,
+- [samtools](https://www.htslib.org) and [minimap2](https://github.com/lh3/minimap2)
+- for dealing with alignments and 
+- [VSEARCH](https://github.com/torognes/vsearch) for sequence-based taxonomic assignments
 
 The above call to `init_pipeline()` checks for available software and gives the URLs of missing software.
 The following does the same:
@@ -170,16 +207,15 @@ R needs to know about the tool's locations. If not placed at a standard location
 In R (example with VSEARCH):
 
 ```r
-Sys.setenv(DadaNanoBC_vsearch = '~/Downloads/vsearch-2.30.2-linux-x86_64/bin/vsearch')
+DadaNanoBC::set_global_opts(vsearch = '~/Downloads/vsearch-2.30.2-linux-x86_64/bin/vsearch')
 tar_make()
 ```
 
-In the Bash console:
+In the Bash console, simply add `program=...` after the `infer_barcodes` call:
 
 ```sh
-cd path/to/pipelinea
-export DadaNanoBC_vsearch=~/Downloads/vsearch-2.30.2-linux-x86_64/bin/vsearch
-./infer_barcodes analysis 8
+cd path/to/pipeline
+./infer_barcodes analysis WORKERS=8 vsearch=~/Downloads/vsearch-2.30.2-linux-x86_64/bin/vsearch
 ```
 
 ## Useful references

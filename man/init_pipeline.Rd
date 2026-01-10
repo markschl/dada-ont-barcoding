@@ -4,13 +4,17 @@
 \alias{init_pipeline}
 \title{Scaffold the Targets Pipeline}
 \usage{
-init_pipeline(path = ".", analysis_dir = "analysis", workers = NULL)
+init_pipeline(path = ".", bash = FALSE, analysis_dir = "analysis")
 }
 \arguments{
 \item{path}{Where to create the \verb{_targets.R} and other files}
 
+\item{bash}{(logical) if \code{TRUE}, initialize in "Bash mode", which means
+that an \code{infer_barcodes} Bash script is copied along with \verb{_targets.R}}
+
 \item{analysis_dir}{Analysis directory}
 }
 \description{
-Scaffold the Targets Pipeline
+Copies \verb{_targets.R} to current directory (or \code{path}) and initializes
+an analysis directory (without overwriting files).
 }

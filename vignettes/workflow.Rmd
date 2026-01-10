@@ -26,11 +26,9 @@ It is assumed that sample-specific tags are attached to primers on both sides (d
 
 # Clustering
 
-The basic procedure for the clustering is implemented by the
-[infer_barcodes](https://markschl.github.io/DadaNanoBC/reference/infer_barcodes.html)
-function.
+The basic procedure for the clustering is implemented by the [infer_barcode()] function.
 The procedure starts with DADA2 clustering, followed by consensus building. Additional steps may follow depending on whether the consensus is unambiguous (each alignment column supported by enough identical bases), or not.
-The workflow is illustrated in this flowchart Relevant configuration options are shown in *grey*.
+The workflow is illustrated in this flowchart. Relevant configuration options are shown in *grey*.
 
 ![](img/cluster-flowchart.png)
 
@@ -55,7 +53,7 @@ This simple procedure is often successful and avoids the need for repeating the 
 
 ### Fixed-threshold clustering
 
-Fixed-threshold clustering is applied for low-coverage samples that don't have enough sequence duplication (see `dada_min_identical` and `dada_min_n0` settings in [infer_barcodes](https://markschl.github.io/DadaNanoBC/reference/infer_barcodes.html)).
+Fixed-threshold clustering is applied for low-coverage samples that don't have enough sequence duplication (see `dada_min_identical` and `dada_min_n0` settings in [infer_barcode](https://markschl.github.io/DadaNanoBC/reference/infer_barcode.html)).
 
 By default, single-linkage is applied with a 97% identity threshold. This may result in an <span style="color:00897c">ambiguous</span> consensus sequence, which can still be manually inspected.
 
@@ -66,7 +64,7 @@ By default, single-linkage is applied with a 97% identity threshold. This may re
 After DADA2 denoising, haplotype splitting and fixed-threshold clustering, the raw (quality-filtered) reads are always aligned to the representative sequence (ASV or dominant unique sequence) with [Minimap2](https://lh3.github.io/minimap2).
 
 The consensus sequence is then obtained with [samtools consensus](https://www.htslib.org/doc/samtools-consensus.html) using a frequency-based approach; no elaborate neural network-based inference is done (see e.g. [Medaka](https://github.com/nanoporetech/medaka)). 
-With the default settings in `infer_barcodes`, each base in the consensus sequence needs to be supported by at least 65% of the reads (weighted by quality scores by default) to be *unambiguous*. Otherwise, an [ambiguous base](https://en.wikipedia.org/wiki/Nucleic_acid_notation) is shown, which may indicate unresolved sequence variation.
+With the default settings in [infer_barcode()], each base in the consensus sequence needs to be supported by at least 65% of the reads (weighted by quality scores by default) to be *unambiguous*. Otherwise, an [ambiguous base](https://en.wikipedia.org/wiki/Nucleic_acid_notation) is shown, which may indicate unresolved sequence variation.
 
 The length of **long homopolymer** repeats is often not very consistent between different sequencing reads, which often results in `N` bases in the consensus. A simple frequency-based approach is used to "fix" this situation: the homopolymer length is taken from the *most abundant sequence* (see also non-public function [fix_homopolymers](https://markschl.github.io/DadaNanoBC/reference/fix_homopolymers.html)).
 
@@ -82,8 +80,8 @@ Sequence variation *within* taxa (e.g. haplotypes) is distinguished from *betwee
 
 # Taxonomic assignments
 
-Taxonomic names are automatically assigned with the the [SINTAX algorithm](https://doi.org/10.1101/074161) using a reference database (see [do_assign_compare_taxonomy](https://markschl.github.io/DadaNanoBC/reference/infer_barcodes.html)).
+Taxonomic names are automatically assigned with the the [SINTAX algorithm](https://doi.org/10.1101/074161) using a reference database (see [do_assign_compare_taxonomy](https://markschl.github.io/DadaNanoBC/reference/infer_barcode.html)).
 
 Second, taxonomic names associated with the specimens are compared to the sequence-based taxonomic assignments. From this, a **taxonomic overlap** is calculated, which is the *proportion of matching ranks in the taxonomic lineages* (as far as names are defined at these levels). The lineages  are retrieved from the [GBIF backbone](https://doi.org/10.15468/39omei) taxonomy.
 
-Inconsistent taxonomic labels may indicate errors during the preparation or identification (or possibly the sequence-based identification), or the presence of contamination. Potential **dominant contaminants** are automatically flagged (see *details* section in [do_assign_compare_taxonomy help page](https://markschl.github.io/DadaNanoBC/reference/infer_barcodes.html)).
+Inconsistent taxonomic labels may indicate errors during the preparation or identification (or possibly the sequence-based identification), or the presence of contamination. Potential **dominant contaminants** are automatically flagged (see *details* section in [do_assign_compare_taxonomy help page](https://markschl.github.io/DadaNanoBC/reference/infer_barcode.html)).

@@ -7,13 +7,16 @@
 compare_seqs(d, bam_out = NULL, tmp_dir = NULL, known_seq = NULL)
 }
 \arguments{
-\item{data}{frame returned by \link{infer_barcodes} (needs the \emph{consensus} column)}
+\item{data}{frame returned by \link{infer_barcode} (needs the \emph{consensus} column).}
 }
 \value{
 Adds a \code{consensus_diffs} column to \code{d} (NA if not compared, Inf if not mapped
 due to too many mismatches)
+TODO: ambiguous bases unfortunately lead to mismatches
 }
 \description{
 Maps already known sequences or inconsistent ASV sequences against the consensus
+and creates very small BAM alignment files containing just inconsistent
+consensus <-> cluster sequence comparisons and consensus <-> known sequence comparisons
 (also useful for manual inspection)
 }

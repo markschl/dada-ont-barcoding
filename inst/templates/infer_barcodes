@@ -2,18 +2,18 @@
 
 set -euo pipefail
 
-if [[ "$#" < 1 || "$#" > 2 ]]; then
-  echo "Usage: $0 analysis_dir [n_workers]" >&2
+if [[ "$#" < 1 ]]; then
+  echo "Usage: $0 analysis_dir [setting=value, ...]" >&2
   exit 1
 fi
 
+export DadaNanoBC_ANALYSIS_DIR="$1"
+shift
 
-analysis_dir="$1"
-cores=1
-if [[ "$#" == 2 ]]; then
-  cores="$2"
-fi
+for arg in "$@"; do
+  export DadaNanoBC_"$arg"
+done
 
-export DadaNanoBC_ANALYSIS_DIR=$analysis_dir
-export DadaNanoBC_WORKERS=$cores
 Rscript -e "targets::tar_make()"
+
+Rscript -e 'm <- targets::tar_meta(fields = warnings, complete_only = TRUE); for (i in seq_len(nrow(m))) cat(m$name[i], ": ", m$warnings[i], "\n")'

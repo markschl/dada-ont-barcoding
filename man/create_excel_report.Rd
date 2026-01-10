@@ -10,7 +10,8 @@ create_excel_report(
   low_abund_threshold = 20,
   min_seqs_unknown = 10,
   n_curate = 4,
-  n_show_depth = 6
+  n_show_depth = 6,
+  bam_dir = NULL
 )
 }
 \arguments{
@@ -26,6 +27,12 @@ top taxon to list in the \emph{curation} section}
 
 \item{n_show_depth}{max. number of sequences (polymorphism/haplotypes) from the
 top taxon for which to output read numbers}
+
+\item{bam_dir}{Path to directory with separate BAM files
+(→ data link will appear).
+Relative hyperlinks are generated if bam_dir is a subdirectory of dirname(outfile),
+otherwise absolute paths are inserted, and moving the alignments directory
+will break the links.}
 
 \item{min_seqs}{ignore samples found in reads (index combination) but not in the
 samples table if they have less than the given number of reads}

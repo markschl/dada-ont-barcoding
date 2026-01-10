@@ -11,6 +11,11 @@
 #' top taxon to list in the *curation* section
 #' @param n_show_depth max. number of sequences (polymorphism/haplotypes) from the
 #' top taxon for which to output read numbers
+#' @param bam_dir Path to directory with separate BAM files
+#' (→ data link will appear).
+#' Relative hyperlinks are generated if bam_dir is a subdirectory of dirname(outfile),
+#' otherwise absolute paths are inserted, and moving the alignments directory
+#' will break the links.
 #'
 #' @importFrom openxlsx2 wb_workbook wb_dims wb_color wb_comment int2col
 #' @export
@@ -19,7 +24,9 @@ create_excel_report <- function(seq_tab,
                           low_abund_threshold = 20,
                           min_seqs_unknown = 10,
                           n_curate = 4,
-                          n_show_depth = 6) {
+                          n_show_depth = 6,
+                          bam_dir = NULL
+                          ) {
 
   seq_tab_def <- seq_tab[!is.na(seq_tab$sample) | !is.na(seq_tab$n_reads) & seq_tab$n_reads >= min_seqs_unknown,]
 
@@ -101,11 +108,14 @@ create_excel_report <- function(seq_tab,
     'unexpected taxon',
     NA
   )
-  seq_tab_def$link = '→ data'
+  if (!is.null(bam_dir))
+    seq_tab_def$link = '→ data'
 
   fixed_cols <- c(
     'amplicon', 'plate', 'well',
-    'indexes', 'data link'='link', 'sample', 'sample_type',
+    'indexes',
+    if (!is.null(bam_dir)) 'data link'='link',
+    'sample', 'sample_type',
     'issues', '# seqs'='top_n_reads', '# ambig'='top_seq_consensus_ambigs',
     '# seqs'='n_reads', '% assigned'='target_cluster_frac',
     'taxon', 'auto-lineage'='top_seq_short_lineage', 'auto-taxon'='top_seq_taxon', 'matching ranks',
@@ -116,8 +126,10 @@ create_excel_report <- function(seq_tab,
   names(fixed_cols) = ifelse(names(fixed_cols) == '', fixed_cols, names(fixed_cols))
 
   col_widths <- c(
-    12, 5,
-    5, 12, 8, 12, 10,
+    12, 5, 5,
+    12,
+    if (!is.null(bam_dir)) 8,
+    12, 10,
     25, 8, 8, 9, 8,
     22, 22, 22, 8,
     5, 5,
@@ -343,8 +355,14 @@ create_excel_report <- function(seq_tab,
 
   # hyperlinks
 
-  wb$add_hyperlink(dims = wb_dims(cols = match('link', cols), rows = row_i),
-                   target = paste0('./alignments/', seq_tab_def$primer_indexes))
+  if (!is.null(bam_dir)) {
+    # simple check for relative path (no parent links possible)
+    bam_dir <- gsub('/$', '', bam_dir)
+    bam_dir_rel <- gsub(paste0('^', dirname(outfile)), '', bam_dir)
+    path <- if (bam_dir_rel == bam_dir) normalizePath(bam_dir) else bam_dir_rel
+    wb$add_hyperlink(dims = wb_dims(cols = match('link', cols), rows = row_i),
+                     target = sprintf('./%s/%s', path, seq_tab_def$primer_indexes))
+  }
 
   # formatting
 
@@ -441,7 +459,9 @@ create_excel_report <- function(seq_tab,
   # Details sheet
 
   dcols <- c(
-    'amplicon', 'indexes', 'data link'='link', 'name'='id', 'unique id'='unique_id',
+    'amplicon', 'indexes',
+    if (!is.null(bam_dir)) 'data link'='link',
+    'name'='id', 'unique id'='unique_id',
     'taxon group'='taxon_num', 'sequence', 'FASTA'='fasta',
     '# reads'='n_mapped', '# cons. diffs'='consensus_diffs',  '# ambig'='consensus_ambigs',
     'auto-lineage'='short_lineage', 'auto-taxon'='taxon', 'matching ranks',
@@ -450,7 +470,9 @@ create_excel_report <- function(seq_tab,
   names(dcols) = ifelse(names(dcols) == '', dcols, names(dcols))
 
   dcol_widths <- c(
-    12, 12, 8, 12, 10,
+    12, 12,
+    if (!is.null(bam_dir)) 8,
+    12, 10,
     10, 15, 15,
     8, 8, 8,
     35, 22, 8,
@@ -463,7 +485,8 @@ create_excel_report <- function(seq_tab,
       d$amplicon <- seq_tab_def$amplicon[i]
       d$indexes <- seq_tab_def$indexes[i]
       spec <- !d$unspecific
-      d$link <- '→ data'
+      if (!is.null(bam_dir))
+        d$link <- '→ data'
       d$fasta <- NA
       if (!is.null(d$matching_ranks) && any(!is.na(d$matching_ranks))) {
         d$`matching ranks` = with(d, paste(matching_ranks, matching_ranks + mismatching_ranks, sep='/'))

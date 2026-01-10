@@ -1,23 +1,36 @@
 
 #' Scaffold the Targets Pipeline
 #'
+#' Copies `_targets.R` to current directory (or `path`) and initializes
+#' an analysis directory (without overwriting files).
+#'
 #' @param path Where to create the `_targets.R` and other files
+#' @param bash (logical) if `TRUE`, initialize in "Bash mode", which means
+#' that an `infer_barcodes` Bash script is copied along with `_targets.R`
 #' @param analysis_dir Analysis directory
 #'
 #' @export
-init_pipeline <- function(path = '.', analysis_dir = 'analysis', workers = NULL) {
+init_pipeline <- function(path = '.',
+                          bash = FALSE,
+                          analysis_dir = 'analysis') {
+  if (!('targets' %in% installed.packages()[, 'Package'])) {
+    message("Installing 'targets' package")
+    install.packages('targets', quiet = TRUE)
+  }
   file_dir <- c(
     '_targets.R' = path,
-    'infer_barcodes' = path,
     'config.yaml' = analysis_dir,
     'meta-ITS5-ITS4.xlsx' = analysis_dir
   )
+  if (bash) {
+    file_dir[['infer_barcodes']] <- path
+  }
   dir.create(analysis_dir, FALSE, TRUE)
   for (f in names(file_dir)) {
     source <- system.file('templates', f, package = 'DadaNanoBC')
     target <- file.path(file_dir[[f]], f)
     if (file.exists(target)) {
-      warning('File ', target, ' exists, not overwriting.')
+      warning('File ', target, ' exists, not overwriting (delete manually).')
     } else {
       file.copy(source, target)
     }
@@ -29,11 +42,6 @@ init_pipeline <- function(path = '.', analysis_dir = 'analysis', workers = NULL)
     )
     Sys.setenv(setNames(analysis_dir, 'DadaNanoBC_ANALYSIS_DIR'))
   }
-  if (is.null(workers)) {
-    workers <- parallel::detectCores()
-    message(sprintf('Assuming %d parallel workers, change with:\nSys.setenv(DadaNanoBC_ANALYSIS_DIR = <workers>)',
-                    workers))
-  }
   message(
     "Files copied!\nNext steps:\n",
     sprintf("1. Modify the example metadata file '%s/meta-ITS5-ITS4.xlsx' to contain ",
@@ -43,7 +51,15 @@ init_pipeline <- function(path = '.', analysis_dir = 'analysis', workers = NULL)
             analysis_dir),
     sprintf("3. Adapt '%s/config.yaml' to your needs (at least the 'taxonony' section).\n",
             analysis_dir),
-    "4. Run `targets::tar_make()`"
+    if (bash) {
+      "4. `./infer_barcodes <analaxis_dir> WORKERS=<N> [more options]`"
+    } else {
+      paste(
+        "4. If necessary: `DadaNanoBC::set_global_opts(ANALYSIS_DIR = ..., WORKERS = <N>)`",
+        "5. Run `targets::tar_make()`",
+        sep='\n'
+      )
+    }
   )
   message('Checking for external programs needed by DadaNanoBC:')
   check_system_requirements()
@@ -528,18 +544,18 @@ do_demux <- function(primer_search_fq,
 
 #' Infer barcode sequences for all samples
 #'
-#' High-level function calling [infer_barcodes] on every sample,
+#' High-level function calling [infer_barcode] and [compare_seqs] on every sample.
 #' Parallel processing possible with `cores` > 1. Custom parallel processing
 #' frameworks can be plugged in by providing `parallel_lapply_fn`.
 #'
 #' @param seq_tab Sequence metadata table returned by [do_trim_demux] or [do_demux]
 #' @param dada_err Result of [dada_learn_errors]
 #' @param aln_out Optional output directory for BAM alignments (none saved if `NULL`)
-#' @param tmp_dir Optional temporary directory (e.g. [RAM drive](https://en.wikipedia.org/wiki/RAM_drive)
-#'    such as `/run/user/1000/DadaNanoBC` on Linux, for faster processing)
+#' @param tmp_dir Optional temporary directory
+#' (default: user-specific temporary directory, see [set_global_opts])
 #'
 #' @returns Input table (`seq_tab`) with a new column `clustering`, which is a list
-#' of data frames as returned by [infer_barcodes]
+#' of data frames as returned by [infer_barcode]
 #'
 #' @export
 do_infer_all_barcodes <- function(seq_tab,
@@ -550,10 +566,6 @@ do_infer_all_barcodes <- function(seq_tab,
                               ...,
                               cores = 1) {
   # for parallel::clusterExport
-  cluster_export <- c('get_program',
-                      'compare_seqs',
-                      'write_dna',
-                      .infer_barcodes_export)
   idx <- seq_len(nrow(seq_tab))
   stopifnot(!is.null(seq_tab$indexes))
   stopifnot(!is.na(seq_tab$indexes))
@@ -578,7 +590,8 @@ do_infer_all_barcodes <- function(seq_tab,
         } else {
           alignment_prefix <- NULL
         }
-        d <- infer_barcodes(
+        tmp_dir <- tmp_dir %||% get_tmp_dir()
+        d <- infer_barcode(
           fq,
           dada_err,
           alignment_prefix = alignment_prefix,
@@ -599,10 +612,7 @@ do_infer_all_barcodes <- function(seq_tab,
       })
     }
     res <- if (is.null(parallel_lapply_fn)) {
-      process_parallel(idx_batches,
-                       process_fn,
-                       cores = cores,
-                       export = cluster_export)
+      process_parallel(idx_batches, process_fn, cores = cores)
     } else {
       parallel_lapply_fn(idx_batches, process_fn)
     }
@@ -827,8 +837,8 @@ do_assign_taxonomy <- function(seq_tab,
   unique_map <- setNames(names(unique_seqs), unique_seqs)
 
   # assign using SINTAX
-  seqs_tmp <- tempfile('seqs', tmpdir = tmp_dir %||% tempdir(), fileext =
-                         '.fasta')
+  tmp_dir <- tmp_dir %||% get_tmp_dir()
+  seqs_tmp <- tempfile('seqs', tmpdir = tmp_dir, fileext = '.fasta')
   write_dna(unique_seqs, seqs_tmp)
   seq_lineages <- assign_taxonomy_sintax(
     seqs_tmp,
@@ -844,7 +854,7 @@ do_assign_taxonomy <- function(seq_tab,
 
   # summarize higher ranks at appropriate level
   # (for reports)
-  if (is.null(summary_ranks)) {
+  if (length(summary_ranks) == 0) {
     top_seq <- na.omit(sapply(seq_tab$clustering, function(t)
       t$consensus[1] %||% NA))
     l <- seq_lineages[match(unique_map[top_seq], rownames(seq_lineages)), , drop = FALSE]
@@ -917,7 +927,7 @@ do_compare_taxonomy <- function(seq_tab,
     lineages <- seq_lineages[d$unique_id, , drop = F]
     # assign to contaminant if any member of a taxon has a known contaminant name
     d$is_contaminant = FALSE
-    for (rank in setdiff(names(known_contaminants), colnames(lineages))) {
+    for (rank in intersect(names(known_contaminants), colnames(lineages))) {
       taxa <- known_contaminants[[rank]]
       as.logical(ave(lineages[, rank] %in% taxa, d$taxon_num, FUN = max))
     }
@@ -1058,12 +1068,10 @@ do_compare_taxonomy <- function(seq_tab,
 
 process_parallel <- function(data,
                              func,
-                             cores = 1,
-                             export = NULL) {
+                             cores = 1) {
   if (cores > 1) {
     cl <- parallel::makeCluster(cores)
-    if (!is.null(export))
-      parallel::clusterExport(cl = cl, export)
+    parallel::clusterEvalQ(cl = cl, library(DadaNanoBC))
     tryCatch(
       parallel::parLapply(cl = cl, data, func),
       finally = parallel::stopCluster(cl)

@@ -1,22 +1,27 @@
-# Example *targets* pipeline configuration; adapt to your needs
-#
-# The only *required* section is "taxonomy": A taxonomic reference database is always needed
+################################################################################
+#### Example *targets* pipeline configuration; adapt to your needs
+################################################################################
+# The only *required* section is "taxonomy": A taxonomic reference database is 
+# always needed.
 # All other sections can be deleted completely if no default settings are changed.
 # Still, at least one relevant setting is shown per section.
+################################################################################
 
 # Sample de-multiplexing and primer trimming
 # For available settings, see https://markschl.github.io/DadaNanoBC/reference/do_trim_demux.html
 demultiplex:
-  min_barcode_length: 200  # default: 50
+  min_barcode_length: 200   # default: 50
 
 # Infer barcode sequences 
-# For available settings, see https://markschl.github.io/DadaNanoBC/reference/infer_barcodes.html
+# For available settings, see https://markschl.github.io/DadaNanoBC/reference/infer_barcode.html
+# The following setttings are useful for a first *quick* look with fewer reads per sample;
+# but make sure to re-run with higher thresholds for better results
 cluster:
-  # Initially limiting the sample depth to 200 is useful for a first quick look into the data;
-  # but re-run with least 1000 to get sequences of higher quality
-  max_sample_depth: 200  # default: 5000
+  max_sample_depth: 200          # default: 5000
+  # this setting is pipeline-specific, for samples with contamination
+  max_contam_sample_depth: 1000  # default: 1e7
 
-# Description of all settings:
+# Taxonomy assignment, for available settings see:
 # Reference databases: https://markschl.github.io/DadaNanoBC/reference/load_taxdb.html
 # Taxonomy assignment: https://markschl.github.io/DadaNanoBC/reference/do_taxonomy.html
 taxonomy:
@@ -39,15 +44,18 @@ taxonomy:
     db_type: qiime_fasta
     likely_kingdom: Bacteria
 
+# Output files
 output:
-  # Settings for Excel report
+  # Excel report
   # (see https://markschl.github.io/DadaNanoBC/reference/create_excel_report.html)
   report:
     low_abund_threshold: 20  # this is the default
   
   # In which form should alignments (BAM files) be kept for manual inspection?
-  # (default: only 'top_combined')
+  # (default: only 'separate')
+  # *Caution*: adding/removing "separate" after the running the pipeline will not work,
+  # only adding combined or top_combined and re-running the pipeline will work
   alignments:
-    - separate  # directory with separate BAM files for every barcode
-    - combined  # one combined BAM file
+    - separate     # directory with separate BAM files for every barcode
+    - combined     # one combined BAM file
     - top_combined # one combined BAM file containing only alignment for *top taxon*

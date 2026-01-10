@@ -13,3 +13,4 @@ docs/
 docs/
 inst/doc/
 !_pkgdown.yml
+!_targets.R

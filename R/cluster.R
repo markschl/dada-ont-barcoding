@@ -1,26 +1,5 @@
 
-# for parallel::clusterExport
-.infer_barcodes_export <- c(
-  'infer_barcodes',
-  'dada2_denoise',
-  'try_split_haplotypes',
-  'cluster_fixed',
-  'ambig_consensus',
-  'run_bash',
-  'parse_idxstats',
-  'pairwise_align',
-  'get_aln_stats',
-  'subset_combine_bam',
-  'rename_bam_refs',
-  'fix_homopolymers',
-  'move_bam',
-  'remove_bam',
-  'bam_to_map',
-  'n_ambigs'
-)
-
-
-#' Infer barcode sequences from raw reads
+#' Infer barcode sequence(s) from raw reads in a single sample
 #'
 #' Applies a clustering workflow to the provided raw reads, based on
 #' DADA2 denoising and/or fixed-threshold clustering to infer the correct
@@ -28,13 +7,13 @@
 #' taxon.
 #'
 #' @param fq demultiplexed FASTQ file
-#' @param dada_err output from `dada2::learnErrors()`
+#' @param dada_err output from [dada_learn_errors]
 #' @param alignment_prefix Optional output prefix for BAM alignment files and
 #'    FASTA references for manual inspection and/or downstream analyses
 #' @param id_prefix Name prefix for sequence IDs in the consensus FASTA and BAM alignment files
-#' @param tmp_dir Optional path to a temporary directory (default is `tempdir()`)
+#' @param tmp_dir Optional path to a temporary directory (details in [set_global_opts])
 #' @param dada_omega_a OMEGA_A parameter value(s) to use for the denoising
-#'     (see ?dada2::setDadaOpt):
+#'     (see [dada2::setDadaOpt]):
 #'    Can be a vector of increasing values (the default), which are tried
 #'    sequentially until a grouping with well-separated haplotypes and
 #'    non-ambiguous consensus sequence(s) is found for the *top taxon*
@@ -125,36 +104,37 @@
 #'      putative taxon is below `min_variant_freq`
 #'
 #' @export
-infer_barcodes <- function(fq,
-                           dada_err,
-                           alignment_prefix,
-                           id_prefix = NULL,
-                           tmp_dir = NULL,
-                           dada_omega_a = c(1e-20, 1e-10, 1e-2),
-                           omegaA_iter_threshold = 1000,
-                           dada_min_identical = 2,
-                           dada_min_n0 = 4,
-                           min_seq_abund = 3,
-                           max_sample_depth = 5000,
-                           consensus_max_depth = 3000,
-                           consensus_threshold = 0.65,
-                           consensus_by_qual = TRUE,
-                           homopoly_fix_min_ident = dada_min_identical,
-                           min_homopoly_len = 6,
-                           fixed_cluster_threshold = 0.97,
-                           taxa_cluster_threshold = fixed_cluster_threshold,
-                           cluster_single_linkage = TRUE,
-                           min_variant_freq = 0.2,
-                           split_min_identical = dada_min_identical,
-                           max_split_ratio = 3,
-                           cores = 1,
-                           verbose = FALSE) {
-  # look for binaries
+infer_barcode <- function(fq,
+                          dada_err,
+                          alignment_prefix,
+                          id_prefix = NULL,
+                          tmp_dir = NULL,
+                          dada_omega_a = c(1e-20, 1e-10, 1e-2),
+                          omegaA_iter_threshold = 1000,
+                          dada_min_identical = 2,
+                          dada_min_n0 = 4,
+                          min_seq_abund = 3,
+                          max_sample_depth = 5000,
+                          consensus_max_depth = 3000,
+                          consensus_threshold = 0.65,
+                          consensus_by_qual = TRUE,
+                          homopoly_fix_min_ident = 4,
+                          min_homopoly_len = 6,
+                          fixed_cluster_threshold = 0.97,
+                          taxa_cluster_threshold = fixed_cluster_threshold,
+                          cluster_single_linkage = TRUE,
+                          min_variant_freq = 0.2,
+                          split_min_identical = 4,
+                          max_split_ratio = 3,
+                          cores = 1,
+                          verbose = FALSE) {
+  # paths/global options
   samtools <- get_program('samtools')
   minimap2 <- get_program('minimap2')
+  tmp_dir <- tmp_dir %||% get_tmp_dir()
 
   # temporary directory
-  tmp <- tempfile('cluster_ont_', tmpdir = tmp_dir %||% tempdir())
+  tmp <- tempfile('infer_barcode_', tmpdir = tmp_dir)
   dir.create(tmp, FALSE, TRUE)
 
   # We will need the reads with quality scores below
@@ -172,6 +152,7 @@ infer_barcodes <- function(fq,
   # tictoc::toc()
 
   d.prev = NULL
+  stopifnot(length(dada_omega_a) >= 1)
   for (dada_attempt in seq_along(dada_omega_a)) {
     round_prefix <- file.path(tmp, paste0('round_', dada_attempt))
     # Run DADA2 denoising
@@ -494,13 +475,16 @@ infer_barcodes <- function(fq,
 #' Compare consensus/ASV and known sequences
 #'
 #' Maps already known sequences or inconsistent ASV sequences against the consensus
+#' and creates very small BAM alignment files containing just inconsistent
+#' consensus <-> cluster sequence comparisons and consensus <-> known sequence comparisons
 #' (also useful for manual inspection)
 #'
-#' @param data frame returned by [infer_barcodes] (needs the *consensus* column)
+#' @param data frame returned by [infer_barcode] (needs the *consensus* column).
 #'
 #' @returns
 #' Adds a `consensus_diffs` column to `d` (NA if not compared, Inf if not mapped
 #' due to too many mismatches)
+#' TODO: ambiguous bases unfortunately lead to mismatches
 #'
 #' @export
 compare_seqs <- function(d,
@@ -509,6 +493,7 @@ compare_seqs <- function(d,
                          known_seq = NULL) {
   samtools <- get_program('samtools')
   minimap2 <- get_program('minimap2')
+  tmp_dir <- tmp_dir %||% get_tmp_dir()
   known_seq <- known_seq %||% NA
   stopifnot(length(known_seq) == 1)
   d$known_seq_diffs <- NA_integer_
@@ -573,7 +558,7 @@ compare_seqs <- function(d,
 #' Learn error rates
 #'
 #' Calls [dada2::learnErrors] with settings adjusted for Nanopore data and the clustering
-#' procedure ([infer_barcodes])
+#' procedure ([infer_barcode])
 #'
 #' @export
 dada_learn_errors <- function(fq_paths, omega_a = 1e-20, cores = 1, ...) {

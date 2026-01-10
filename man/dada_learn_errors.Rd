@@ -8,5 +8,5 @@ dada_learn_errors(fq_paths, omega_a = 1e-20, cores = 1, ...)
 }
 \description{
 Calls \link[dada2:learnErrors]{dada2::learnErrors} with settings adjusted for Nanopore data and the clustering
-procedure (\link{infer_barcodes})
+procedure (\link{infer_barcode})
 }

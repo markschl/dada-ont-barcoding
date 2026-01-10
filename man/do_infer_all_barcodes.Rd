@@ -21,15 +21,15 @@ do_infer_all_barcodes(
 
 \item{aln_out}{Optional output directory for BAM alignments (none saved if \code{NULL})}
 
-\item{tmp_dir}{Optional temporary directory (e.g. \href{https://en.wikipedia.org/wiki/RAM_drive}{RAM drive}
-such as \verb{/run/user/1000/DadaNanoBC} on Linux, for faster processing)}
+\item{tmp_dir}{Optional temporary directory
+(default: user-specific temporary directory, see \link{set_global_opts})}
 }
 \value{
 Input table (\code{seq_tab}) with a new column \code{clustering}, which is a list
-of data frames as returned by \link{infer_barcodes}
+of data frames as returned by \link{infer_barcode}
 }
 \description{
-High-level function calling \link{infer_barcodes} on every sample,
+High-level function calling \link{infer_barcode} and \link{compare_seqs} on every sample.
 Parallel processing possible with \code{cores} > 1. Custom parallel processing
 frameworks can be plugged in by providing \code{parallel_lapply_fn}.
 }

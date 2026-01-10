@@ -70,24 +70,24 @@ load_unite <- function(url, outfile, ...) {
 
 load_qiime_fasta <- function(urls, outfile, tax_urls=NULL, ...) {
   stopifnot(is.null(tax_urls))  # taxonomy expected in FASTA file
-  dbfile <- 'taxdb_tmp.gz'
+  tmp_db <- paste0(outfile, '.tmp.gz')
   seqs <- do.call(c, lapply(urls, function(url) {
-    download.file(url, dbfile, timeout = 600, quiet = TRUE)
-    read_dna(dbfile)
+    download.file(url, tmp_db, timeout = 600, quiet = TRUE)
+    read_dna(tmp_db)
   }))
   convert_write_utax(seqs, outfile, ...)
-  invisible(file.remove(dbfile))
+  invisible(file.remove(tmp_db))
 }
 
 load_qiime_qza <- function(urls, outfile, tax_urls=NULL, ...) {
-  db_dir <- 'taxdb_tmp'
-  taxdb_dir <- 'taxdb_tmp_tax'
+  tmp_db_dir <- paste0(outfile, '.taxdb_tmp')
+  tmp_taxdb_dir <- paste0(outfile, '.taxdb_tmp_tax')
   seqs <- do.call(c, lapply(urls, function(url) {
-    read_dna(load_qza(url, db_dir, 'dna-sequences.fasta'))
+    read_dna(load_qza(url, tmp_db_dir, 'dna-sequences.fasta'))
   }))
   taxonomy <- if (!is.null(tax_urls)) {
     tax <- do.call(rbind, lapply(tax_urls, function(url) {
-      read.delim(load_qza(url, taxdb_dir, 'taxonomy.tsv'))
+      read.delim(load_qza(url, tmp_taxdb_dir, 'taxonomy.tsv'))
     }))
     tax <- setNames(tax[,2], tax[,1])
     tax <- tax[names(seqs)]
@@ -97,9 +97,9 @@ load_qiime_qza <- function(urls, outfile, tax_urls=NULL, ...) {
     NULL
   }
   convert_write_utax(seqs, outfile, taxonomy=taxonomy, ...)
-  unlink(db_dir, TRUE)
+  unlink(tmp_db_dir, TRUE)
   if (!is.null(tax_url)) {
-    unlink(taxdb_dir, TRUE)
+    unlink(tmp_taxdb_dir, TRUE)
   }
 }
 
