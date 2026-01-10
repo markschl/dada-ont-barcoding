@@ -25,6 +25,6 @@ The same options can be set as environment variables:
 \code{set_global_opt} always has priority over environment variables.
 }
 \examples{
-set_global_opt(samtools = '/path/to/samtools', tmp_dir = '/tmp/nanopore-barcoding')
+set_global_opts(samtools = '/path/to/samtools', tmp_dir = '/tmp/nanopore-barcoding')
 
 }
