@@ -67,11 +67,11 @@
   <main id="main" class="col-md-9"><div class="section level1">
 <div class="page-header"><h1 id="dadananobc-nanopore-barcoding-pipeline">DadaNanoBC: Nanopore barcoding pipeline<a class="anchor" aria-label="anchor" href="#dadananobc-nanopore-barcoding-pipeline"></a>
 </h1></div>
-<p>This R package provides functions for:</p>
+<p>This R package provides functions for clustering and validating amplicon sequencing data from specimen barcoding projects using Oxford Nanopore. Although not tested, it should work for PacBio data as well.</p>
 <ul>
 <li>
-<strong>sample demultiplexing</strong> of base-called Nanopore sequencing data</li>
-<li>inferring specimen <strong>barcode sequences</strong> using a <a href="https://benjjneb.github.io/dada2" class="external-link">DADA2</a>-based <a href="https://markschl.github.io/DadaNanoBC/articles/workflow.html#clustering">clustering strategy</a> to accurately resolve haplotypes/polymorphic sequences</li>
+<strong>sample demultiplexing</strong> of pooled reads</li>
+<li>inferring <strong>barcode sequences</strong> using a <a href="https://benjjneb.github.io/dada2" class="external-link">DADA2</a>-based <a href="https://markschl.github.io/DadaNanoBC/articles/workflow.html#clustering">clustering strategy</a> to accurately resolve haplotypes/polymorphic sequences</li>
 <li>automatic <strong>taxonomic assignents</strong> and recognition (down-ranking) of contaminant taxa</li>
 <li>detailed output files (comprehensive Excel table for curation, HTML report, BAM alignment files)</li>
 </ul>
@@ -98,7 +98,7 @@
 <li>An <a href="https://cran.r-project.org" class="external-link">R</a> installation</li>
 <li>Four command-line programs (see <a href="#required-software">required software</a>); the package can always be installed without these, but error messages will appear when calling functions that rely on missing components.</li>
 </ul>
-<p>If <a href="https://nanoporetech.com/document/data-analysis#basecalling-overview" class="external-link">basecalling</a> of the Nanopore data has not yet been done: an Nvidia GPU with Cuda support (details in <a href="basecalling.html">basecalling tutorial</a>).</p>
+<p>If <a href="https://nanoporetech.com/document/data-analysis#basecalling-overview" class="external-link">basecalling</a> of the Nanopore data has not yet been done: an Nvidia GPU with Cuda support (details in <a href="https://markschl.github.io/DadaNanoBC/articles/basecalling.html">here</a>).</p>
 </div>
 <div class="section level2">
 <h2 id="preparation-lab-work-and-basecalling">Preparation: lab work and basecalling<a class="anchor" aria-label="anchor" href="#preparation-lab-work-and-basecalling"></a>
@@ -198,7 +198,15 @@
 <div class="section level2">
 <h2 id="required-software">Required software<a class="anchor" aria-label="anchor" href="#required-software"></a>
 </h2>
-<p>The following tools are required: - <a href="https://github.com/markschl/seqtool" class="external-link">seqtool</a> for primer trimming/demultiplexing, - <a href="https://www.htslib.org" class="external-link">samtools</a> and <a href="https://github.com/lh3/minimap2" class="external-link">minimap2</a> - for dealing with alignments and - <a href="https://github.com/torognes/vsearch" class="external-link">VSEARCH</a> for sequence-based taxonomic assignments</p>
+<p>The following tools are required:</p>
+<ul>
+<li>
+<a href="https://github.com/markschl/seqtool" class="external-link">seqtool</a> for primer trimming/demultiplexing</li>
+<li>
+<a href="https://www.htslib.org" class="external-link">samtools</a> and <a href="https://github.com/lh3/minimap2" class="external-link">minimap2</a> for dealing with alignments</li>
+<li>
+<a href="https://github.com/torognes/vsearch" class="external-link">VSEARCH</a> for sequence-based taxonomic assignments</li>
+</ul>
 <p>The above call to <code><a href="reference/init_pipeline.html">init_pipeline()</a></code> checks for available software and gives the URLs of missing software. The following does the same:</p>
 <div class="sourceCode" id="cb10"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="fu">DadaNanoBC</span><span class="fu">::</span><span class="fu"><a href="reference/check_system_requirements.html">check_system_requirements</a></span><span class="op">(</span><span class="op">)</span></span></code></pre></div>
@@ -210,7 +218,7 @@
 <p><em>Conda package manager</em> (e.g. <a href="https://conda-forge.org/download" class="external-link">Conda-forge</a>) (run in the <a href="#running-in-the-bash-console">bash console</a>):</p>
 <div class="sourceCode" id="cb13"><pre class="sourceCode sh"><code class="sourceCode bash"><span id="cb13-1"><a href="#cb13-1" tabindex="-1"></a><span class="ex">conda</span> install <span class="at">-y</span> <span class="at">-n</span> DadaNanoBC <span class="at">-c</span> bioconda samtools minimap2 vsearch</span>
 <span id="cb13-2"><a href="#cb13-2" tabindex="-1"></a><span class="ex">conda</span> activate DadaNanoBC</span>
-<span id="cb13-3"><a href="#cb13-3" tabindex="-1"></a><span class="co">#./infer_barcodes analysis_dir [workers]</span></span></code></pre></div>
+<span id="cb13-3"><a href="#cb13-3" tabindex="-1"></a><span class="ex">./infer_barcodes</span> analysis_dir <span class="pp">[</span><span class="ss">options</span><span class="pp">]</span></span></code></pre></div>
 <p>Instructions for downloading <em>Seqtool</em> are given on the <a href="https://github.com/markschl/seqtool/releases" class="external-link">Github site</a>.</p>
 <div class="section level3">
 <h3 id="custom-program-location">Custom program location<a class="anchor" aria-label="anchor" href="#custom-program-location"></a>

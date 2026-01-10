@@ -1,9 +1,11 @@
 # DadaNanoBC: Nanopore barcoding pipeline
 
-This R package provides functions for:
+This R package provides functions for clustering and validating amplicon
+sequencing data from specimen barcoding projects using Oxford Nanopore.
+Although not tested, it should work for PacBio data as well.
 
-- **sample demultiplexing** of base-called Nanopore sequencing data
-- inferring specimen **barcode sequences** using a
+- **sample demultiplexing** of pooled reads
+- inferring **barcode sequences** using a
   [DADA2](https://benjjneb.github.io/dada2)-based [clustering
   strategy](https://markschl.github.io/DadaNanoBC/articles/workflow.html#clustering)
   to accurately resolve haplotypes/polymorphic sequences
@@ -42,8 +44,8 @@ is provided for simple execution of a standard workflow (see
 If
 [basecalling](https://nanoporetech.com/document/data-analysis#basecalling-overview)
 of the Nanopore data has not yet been done: an Nvidia GPU with Cuda
-support (details in [basecalling
-tutorial](https://markschl.github.io/DadaNanoBC/basecalling.md)).
+support (details in
+[here](https://markschl.github.io/DadaNanoBC/articles/basecalling.html)).
 
 ## Preparation: lab work and basecalling
 
@@ -195,12 +197,15 @@ cd path/to/pipeline
 
 ## Required software
 
-The following tools are required: -
-[seqtool](https://github.com/markschl/seqtool) for primer
-trimming/demultiplexing, - [samtools](https://www.htslib.org) and
-[minimap2](https://github.com/lh3/minimap2) - for dealing with
-alignments and - [VSEARCH](https://github.com/torognes/vsearch) for
-sequence-based taxonomic assignments
+The following tools are required:
+
+- [seqtool](https://github.com/markschl/seqtool) for primer
+  trimming/demultiplexing
+- [samtools](https://www.htslib.org) and
+  [minimap2](https://github.com/lh3/minimap2) for dealing with
+  alignments
+- [VSEARCH](https://github.com/torognes/vsearch) for sequence-based
+  taxonomic assignments
 
 The above call to
 [`init_pipeline()`](https://markschl.github.io/DadaNanoBC/reference/init_pipeline.md)
@@ -234,7 +239,7 @@ console](#running-in-the-bash-console)):
 ``` sh
 conda install -y -n DadaNanoBC -c bioconda samtools minimap2 vsearch
 conda activate DadaNanoBC
-#./infer_barcodes analysis_dir [workers]
+./infer_barcodes analysis_dir [options]
 ```
 
 Instructions for downloading *Seqtool* are given on the [Github
