@@ -6,12 +6,15 @@ Authors@R: c(
     person(
       "Markus", "Schlegel",
       email = "markschl19@gmail.com",
-      role = c("aut", "cre")
+      role = c("aut", "cre"),
+      comment = c(ORCID = "0000-0003-3453-4783")
     )
   )
-Description: This R-based pipeline infers specimen barcodes from Nanopore sequencing data with multiplexed samples.
-    It includes functions for automatic taxonomic assignments and taxonomy-based recognition of contaminants.
-URL: https://markschl.github.io/DadaNanoBC/
+Description: This package provides functions and a targets pipeline workflow
+    to infer specimen barcodes from Nanopore sequencing data with multiplexed samples.
+    It includes functions for automatic taxonomic assignments and
+    taxonomy-based recognition of contaminants.
+URL: https://github.com/markschl/DadaNanoBC, https://markschl.github.io/DadaNanoBC
 License: MIT
 Encoding: UTF-8
 LazyData: true
