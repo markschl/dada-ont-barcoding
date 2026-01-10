@@ -125,7 +125,7 @@ get_taxdb <- function(taxdb_dir, cfg) {
 
 assign_taxonomy_amplicons <- function(seq_tab, taxdb_cfg, taxdb_dir, cores = 1) {
   amplicons <- unique(seq_tab$amplicon)
-  amp_summary_ranks <- setNames(vector('list', 3), amplicons)
+  amp_summary_ranks <- setNames(vector('list', length(amplicons)), amplicons)
   for (amplicon in amplicons) {
     cat(amplicon, '\n')
     sel <- seq_tab$amplicon == amplicon
@@ -147,7 +147,7 @@ assign_taxonomy_amplicons <- function(seq_tab, taxdb_cfg, taxdb_dir, cores = 1) 
     seq_tab[sel, ] <- ret
   }
   list(seq_tab = seq_tab,
-       amp_summary_ranks = setNames(amp_summary_ranks, names(taxdb_cfg)))
+       amp_summary_ranks = setNames(amp_summary_ranks, amplicons))
 }
 
 recluster_contaminated <- function(seq_tab,
@@ -156,10 +156,10 @@ recluster_contaminated <- function(seq_tab,
                                    taxdb_cfg,
                                    taxdb_dir,
                                    aln_dir,
+                                   max_sample_depth,
                                    max_contam_sample_depth = NULL,
                                    amp_summary_ranks = NULL,
                                    cores = 1) {
-  max_sample_depth <- max_contam_sample_depth %||% 1e7
   do_recluster <- seq_tab$has_contamination &
     !is.na(seq_tab$n_reads) & seq_tab$n_reads >= max_sample_depth
   if (any(do_recluster)) {
@@ -174,7 +174,8 @@ recluster_contaminated <- function(seq_tab,
         aln_out = aln_dir,
         cores = cores,
         cfg = cluster_cfg,
-        inner_fn = infer_barcode
+        inner_fn = infer_barcode,
+        exclude = 'max_contam_sample_depth'
       )
       taxdb_cfg$summary_ranks <- amp_summary_ranks[[amplicon]]
       tax <- assign_taxonomy_amplicons(amp_seqtab, taxdb_cfg, taxdb_dir, cores = cores)
@@ -187,6 +188,9 @@ recluster_contaminated <- function(seq_tab,
 
 
 #### Pipeline definition #######################################################
+
+# settings
+# modify with Sys.getenv('DadaNanoBC_ANALYSIS_DIR' = ...)
 
 analysis_dir <- Sys.getenv('DadaNanoBC_ANALYSIS_DIR', 'analysis')
 n_workers <- as.integer(Sys.getenv('DadaNanoBC_WORKERS', max(parallel::detectCores(), 8)))
@@ -299,7 +303,8 @@ unlist(list(
       aln_out = config_alignment_dir,
       cores = 1,
       inner_fn = infer_barcode,
-      cfg = config_cluster
+      cfg = config_cluster,
+      exclude = 'max_contam_sample_depth'
     ),
     pattern = map(group_seqtab),
     resources = tar_resources(crew = tar_resources_crew(controller = 'parallel'))
@@ -328,6 +333,7 @@ unlist(list(
       taxdb_cfg = config_taxdb,
       taxdb_dir = taxdb_dir,
       aln_dir = config_alignment_dir,
+      max_sample_depth = config_cluster$max_sample_depth,
       max_contam_sample_depth = config_cluster$max_contam_sample_depth,
       amp_summary_ranks = taxonomy$amp_summary_ranks,
       cores = n_workers
