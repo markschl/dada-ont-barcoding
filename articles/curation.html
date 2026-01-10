@@ -46,6 +46,7 @@
 <li class="nav-item"><form class="form-inline" role="search">
  <input class="form-control" type="search" name="search-input" id="search-input" autocomplete="off" aria-label="Search site" placeholder="Search for" data-search-index="../search.json">
 </form></li>
+<li class="nav-item"><a class="external-link nav-link" href="https://github.com/markschl/DadaNanoBC/" aria-label="GitHub"><span class="fa fab fa-github fa-lg"></span></a></li>
 <li class="nav-item dropdown">
   <button class="nav-link dropdown-toggle" type="button" id="dropdown-lightswitch" data-bs-toggle="dropdown" aria-expanded="false" aria-haspopup="true" aria-label="Light switch"><span class="fa fa-sun"></span></button>
   <ul class="dropdown-menu dropdown-menu-end" aria-labelledby="dropdown-lightswitch">
@@ -70,7 +71,7 @@
       <h1>Sequence curation</h1>
             
       
-
+      <small class="dont-index">Source: <a href="https://github.com/markschl/DadaNanoBC/blob/main/vignettes/curation.Rmd" class="external-link"><code>vignettes/curation.Rmd</code></a></small>
       <div class="d-none name"><code>curation.Rmd</code></div>
     </div>
 
@@ -92,7 +93,7 @@ although not all of them are critical. The list can be filtered.</p>
 </h3>
 <p>The <em>seq1</em>, [<em>seq2</em>, etc.] columns in the
 <strong>Curation</strong> section contain the final sequences. In case
-of problems, they can be edited. Changed sequences appear in <span style="color:blue">blue</span></p>
+of problems, they can be edited. Changed sequences appear in <span style="color:blue">blue</span>. Ambiguous sequences appear in <span style="color:#bb34bd">purple</span>.</p>
 <blockquote>
 <p>FASTA sequences can be exported by a simple copy&amp;paste from the
 <em>FA1</em> [<em>FA2</em>, etc.] columns to a text file (works well
@@ -112,7 +113,7 @@ then copy&amp;paste to the final text file or search field, etc.
 <div class="section level3">
 <h3 id="inconsistent-taxonomy">Inconsistent taxonomy<a class="anchor" aria-label="anchor" href="#inconsistent-taxonomy"></a>
 </h3>
-<p>The <strong>tax-mimatch</strong> issue indicates a mismatch between
+<p>The <strong>tax-mismatch</strong> issue indicates a mismatch between
 the taxonomic name in the <em>morpho-taxon</em> entry and the
 sequence-based identification. Possible reasons:</p>
 <ul>
@@ -122,7 +123,7 @@ specimens/extracting/amplifying</li>
 <li>the automatic taxonomy assignment of barcode sequences did not work
 correctly, or the taxonomic lineages obtained from GBIF are not
 correct</li>
-<li>contamination not automatically recognized (<a href="analysis/workflow.html#taxonomic-assignments">how it works</a>)</li>
+<li>contamination not automatically recognized</li>
 </ul>
 <p>It is advisable to check the <em>details</em> worksheet: Copy the
 sample barcode combination (e.g. <em>bc018-bc183</em>) and filter the
@@ -142,12 +143,16 @@ tab.</p>
 </blockquote>
 </div>
 <div class="section level3">
-<h3 id="ambiguities">Ambiguities<a class="anchor" aria-label="anchor" href="#ambiguities"></a>
+<h3 id="ambiguous-consensus">Ambiguous consensus<a class="anchor" aria-label="anchor" href="#ambiguous-consensus"></a>
 </h3>
 <p>If the alignment consensus has ambiguous positions
-(<em>ambig-consensus</em> issue), these may be inspected by clicking on
-<em>→ data</em> to open a folder with alignment files. Use a sequence
-viewer of your choice, e.g. Geneious, CLC Workbench or UGENE.</p>
+(<em>ambig-consensus</em> issue), these may be inspected.</p>
+<blockquote>
+<p>If the <em>alignemnts: separate</em> setting was active when running
+the pipeline, there will be a <em>→ data</em> link to open a folder with
+BAM alignment files. Use a sequence viewer of your choice,
+e.g. Geneious, CLC Workbench or UGENE.</p>
+</blockquote>
 <p>The <em>…seq_comparison.fasta</em> file may be inspected first.
 Inconsistencies should be readily visible (example alignment view in
 Geneious).</p>
@@ -155,24 +160,24 @@ Geneious).</p>
 <p>The BAM file (and the corresponding reference consensus sequences)
 offer additional insights:</p>
 <p><img src="img/aln-detail.png"></p>
-<p>In this case, a long homopolymer stretch results in an unclear
-sequence.</p>
 <blockquote>
-<p>Consider copying the “group1_seq1_dominant_seq” (= most abundant
-sequence in sample) to the <em>seq1</em> column in the <em>Curation</em>
-section (without gaps).</p>
+<p>If necessary, copy the <strong>correct sequence</strong> to the
+<em>seq1</em> (<em>seq2</em>, etc.) column in the <em>Curation</em>
+section. It will become <span style="color:blue">blue</span> to indicate
+that something has been changed.</p>
 </blockquote>
 </div>
 <div class="section level3">
-<h3 id="list-of-issues">List of issues<a class="anchor" aria-label="anchor" href="#list-of-issues"></a>
+<h3 id="complete-list-of-issues">Complete list of issues<a class="anchor" aria-label="anchor" href="#complete-list-of-issues"></a>
 </h3>
+<p>Not all issues are critical, some messages just provide more
+context.</p>
 <ul>
 <li><p><strong>ambig-consensus:</strong> At least one of the top taxon
 consensus sequences have ambiguities, suggesting either unresolved
-sequence variation, or sequencing errors e.g. in long homopolmyer
-regions. To investigate, click on “→ data” to open a folder with
-alignment files. (see also <a href="https://github.com/markschl/DadaNanoBC/blob/main/templates/analysis/config.commented.yaml" class="external-link"><em>consensus_threshold</em>
-setting</a>)</p></li>
+sequence variation, or sequencing errors (the
+<em>consensus_threshold</em> setting strongly influences whether this
+issue appears, see <code><a href="../reference/infer_barcode.html">infer_barcode()</a></code>)</p></li>
 <li><p><strong>tax-mismatch:</strong> Inconsistency found between the
 name in the <em>morpho-taxon</em> column and the <em>auto-assigned
 taxon</em> (see also “matching ranks” column). Strong inconsistencies
@@ -181,22 +186,21 @@ contamination is often automatically recognized.</p></li>
 </ul>
 <blockquote>
 <p>Note that the automatic taxonomy is not always correct; it depends on
-the reference database and the <a href="https://github.com/markschl/DadaNanoBC/blob/main/templates/analysis/config.commented.yaml" class="external-link">confidence
-threshold</a></p>
+the reference database and the <em>confidence_threshold</em> setting
+(<code><a href="../reference/do_taxonomy.html">do_assign_compare_taxonomy()</a></code>).</p>
 </blockquote>
 <ul>
 <li><p><strong>contamination:</strong> The most abundant taxon is
 suspected to be a contaminating sequence and was therefore ignored. This
 happens if the prepared specimen was not “pure”, and DNA from the host
-or another specie was co-amplified. The top taxon is still listed in the
-“details” sheet, and manual inspection of at least part of the putative
-contaminants is recommended to ensure that there are no errors in the
-automatic ranking (see also <a href="https://github.com/markschl/DadaNanoBC/blob/main/templates/analysis/config.commented.yaml" class="external-link"><em>contam_rank_delta</em>
-setting</a>)</p></li>
+or another specie was co-amplified. The most abundant taxon is still
+listed in the “details” sheet, and manual inspection of at least part of
+the putative contaminants is recommended to ensure that there are no
+errors in the automatic ranking (see also <em>contam_rank_delta</em>
+setting, <code><a href="../reference/do_taxonomy.html">do_assign_compare_taxonomy()</a></code>)</p></li>
 <li><p><strong>known-seq-diffs:</strong> There is at least one mismatch
 between the top taxon and the provided “known” sequence. To investigate,
-click on “→ data” to open a folder containing
-…seq_comparison.fasta</p></li>
+look for “…_seq_comparison.bam”.</p></li>
 <li><p><strong>known-seq-contamination:</strong> The provided “known”
 sequence appears to be a contamination itself</p></li>
 <li><p><strong>many-variants:</strong> Strong sequence variability for
@@ -205,8 +209,8 @@ Maybe multiple individuals are present in the DNA mix?</p></li>
 <li><p><strong>low-coverage:</strong> Only few Nanopore sequences
 support the top taxon. Low-coverage samples may have more ambiguities,
 and there is a higher risk for errors (possibly investigate the BAM
-alignments) (see also <a href="https://github.com/markschl/DadaNanoBC/blob/main/templates/analysis/config.commented.yaml" class="external-link"><em>low_abund_threshold</em>
-setting</a>)</p></li>
+alignments) (see also <em>low_abund_threshold</em>,
+<code><a href="../reference/create_excel_report.html">create_excel_report()</a></code>)</p></li>
 <li><p><strong>&lt; 3 times overabundant</strong>: The top taxon is less
 than 3x more abundant than the second taxon. It may be worth to check
 for contamination.</p></li>
@@ -214,10 +218,13 @@ for contamination.</p></li>
 suggests that there are several related taxa present in the same sample.
 It may be worth to check for contamination to be sure that the top taxon
 is actually the one you are looking for.</p></li>
-<li><p><strong>Re-mapping to consensus gives another consensus</strong>:
-During the clustering workflow, consensus sequences were not identical
-before and after a re-mapping of reads. Consider inspecting the
-alignments (see <em>ambig-consensus</em>).</p></li>
+<li><p><strong>Re-mapping to consensus gives another consensus</strong>
+(very rare): During the clustering workflow, consensus sequences were
+not identical before and after a re-mapping of reads. Consider
+inspecting the alignments.</p></li>
+</ul>
+<p>Not necessarily real <em>issues</em>:</p>
+<ul>
 <li><p><strong>[consensus-diffs]:</strong> At least one of the top taxon
 consensus sequences does not match the <em>dominant sequence</em>. This
 is not necessarily an issue (as the consensus is always reported) but is

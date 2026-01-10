@@ -1,11 +1,12 @@
 # Scaffold the Targets Pipeline
 
-Scaffold the Targets Pipeline
+Copies `_targets.R` to current directory (or `path`) and initializes an
+analysis directory (without overwriting files).
 
 ## Usage
 
 ``` r
-init_pipeline(path = ".", analysis_dir = "analysis", workers = NULL)
+init_pipeline(path = ".", bash = FALSE, analysis_dir = "analysis")
 ```
 
 ## Arguments
@@ -13,6 +14,11 @@ init_pipeline(path = ".", analysis_dir = "analysis", workers = NULL)
 - path:
 
   Where to create the `_targets.R` and other files
+
+- bash:
+
+  (logical) if `TRUE`, initialize in "Bash mode", which means that an
+  `infer_barcodes` Bash script is copied along with `_targets.R`
 
 - analysis_dir:
 

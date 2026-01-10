@@ -11,7 +11,8 @@ create_excel_report(
   low_abund_threshold = 20,
   min_seqs_unknown = 10,
   n_curate = 4,
-  n_show_depth = 6
+  n_show_depth = 6,
+  bam_dir = NULL
 )
 ```
 
@@ -39,6 +40,13 @@ create_excel_report(
 
   max. number of sequences (polymorphism/haplotypes) from the top taxon
   for which to output read numbers
+
+- bam_dir:
+
+  Path to directory with separate BAM files (→ data link will appear).
+  Relative hyperlinks are generated if bam_dir is a subdirectory of
+  dirname(outfile), otherwise absolute paths are inserted, and moving
+  the alignments directory will break the links.
 
 - min_seqs:
 

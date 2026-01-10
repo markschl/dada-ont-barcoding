@@ -46,6 +46,7 @@
 <li class="nav-item"><form class="form-inline" role="search">
  <input class="form-control" type="search" name="search-input" id="search-input" autocomplete="off" aria-label="Search site" placeholder="Search for" data-search-index="../search.json">
 </form></li>
+<li class="nav-item"><a class="external-link nav-link" href="https://github.com/markschl/DadaNanoBC/" aria-label="GitHub"><span class="fa fab fa-github fa-lg"></span></a></li>
 <li class="nav-item dropdown">
   <button class="nav-link dropdown-toggle" type="button" id="dropdown-lightswitch" data-bs-toggle="dropdown" aria-expanded="false" aria-haspopup="true" aria-label="Light switch"><span class="fa fa-sun"></span></button>
   <ul class="dropdown-menu dropdown-menu-end" aria-labelledby="dropdown-lightswitch">
@@ -70,7 +71,7 @@
       <h1>Basecalling</h1>
             
       
-
+      <small class="dont-index">Source: <a href="https://github.com/markschl/DadaNanoBC/blob/main/vignettes/basecalling.Rmd" class="external-link"><code>vignettes/basecalling.Rmd</code></a></small>
       <div class="d-none name"><code>basecalling.Rmd</code></div>
     </div>
 
@@ -122,7 +123,7 @@ there.</p>
 <p>Basecalling on a remote server is slightly more complicated. This
 script shows how to do this on a SLURM server with a GPU node. The
 <code>remote_dir</code> must contain a job submission script (based on
-this <a href="https://github.com/markschl/DadaNanoBC/templates/base_calling/slurm_submit_basecaller.sh" class="external-link">template</a>);
+this <a href="https://github.com/markschl/DadaNanoBC/blob/main/templates/base_calling/slurm_submit_basecaller.sh" class="external-link">template</a>);
 it can be copied to the remote directory e.g. using an FTP client;
 adjust the <code>dorado</code> path and your email address inside the
 script.</p>
@@ -135,7 +136,7 @@ script.</p>
 <span id="cb2-7"><a href="#cb2-7" tabindex="-1"></a><span class="co"># SSH login to HPC server</span></span>
 <span id="cb2-8"><a href="#cb2-8" tabindex="-1"></a><span class="va">ssh</span><span class="op">=</span>user@server-address</span>
 <span id="cb2-9"><a href="#cb2-9" tabindex="-1"></a></span>
-<span id="cb2-10"><a href="#cb2-10" tabindex="-1"></a><span class="co"># Remote directory containing the submission script (see templates/slurm_submit_basecaller.sh)</span></span>
+<span id="cb2-10"><a href="#cb2-10" tabindex="-1"></a><span class="co"># Remote directory containing the submission script (slurm_submit_basecaller.sh)</span></span>
 <span id="cb2-11"><a href="#cb2-11" tabindex="-1"></a><span class="co"># The base-called data is placed in $remote_dir/$run_name</span></span>
 <span id="cb2-12"><a href="#cb2-12" tabindex="-1"></a><span class="va">remote_dir</span><span class="op">=</span>projects/ONT</span>
 <span id="cb2-13"><a href="#cb2-13" tabindex="-1"></a></span>

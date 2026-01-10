@@ -11,8 +11,8 @@
 <script src="deps/bootstrap-5.3.1/bootstrap.bundle.min.js"></script><link href="deps/font-awesome-6.5.2/css/all.min.css" rel="stylesheet">
 <link href="deps/font-awesome-6.5.2/css/v4-shims.min.css" rel="stylesheet">
 <script src="deps/headroom-0.11.0/headroom.min.js"></script><script src="deps/headroom-0.11.0/jQuery.headroom.min.js"></script><script src="deps/bootstrap-toc-1.0.1/bootstrap-toc.min.js"></script><script src="deps/clipboard.js-2.0.11/clipboard.min.js"></script><script src="deps/search-1.0.0/autocomplete.jquery.min.js"></script><script src="deps/search-1.0.0/fuse.min.js"></script><script src="deps/search-1.0.0/mark.min.js"></script><!-- pkgdown --><script src="pkgdown.js"></script><meta property="og:title" content="DADA2-Based Pipeline for Infering DNA Barcodes from Nanopore Sequence Data">
-<meta name="description" content="This R-based pipeline infers specimen barcodes from Nanopore sequencing data with multiplexed samples. It includes functions for automatic taxonomic assignments and taxonomy-based recognition of contaminants.">
-<meta property="og:description" content="This R-based pipeline infers specimen barcodes from Nanopore sequencing data with multiplexed samples. It includes functions for automatic taxonomic assignments and taxonomy-based recognition of contaminants.">
+<meta name="description" content="This package provides functions and a targets pipeline workflow to infer specimen barcodes from Nanopore sequencing data with multiplexed samples. It includes functions for automatic taxonomic assignments and taxonomy-based recognition of contaminants.">
+<meta property="og:description" content="This package provides functions and a targets pipeline workflow to infer specimen barcodes from Nanopore sequencing data with multiplexed samples. It includes functions for automatic taxonomic assignments and taxonomy-based recognition of contaminants.">
 </head>
 <body>
     <a href="#main" class="visually-hidden-focusable">Skip to contents</a>
@@ -48,6 +48,7 @@
 <li class="nav-item"><form class="form-inline" role="search">
  <input class="form-control" type="search" name="search-input" id="search-input" autocomplete="off" aria-label="Search site" placeholder="Search for" data-search-index="search.json">
 </form></li>
+<li class="nav-item"><a class="external-link nav-link" href="https://github.com/markschl/DadaNanoBC/" aria-label="GitHub"><span class="fa fab fa-github fa-lg"></span></a></li>
 <li class="nav-item dropdown">
   <button class="nav-link dropdown-toggle" type="button" id="dropdown-lightswitch" data-bs-toggle="dropdown" aria-expanded="false" aria-haspopup="true" aria-label="Light switch"><span class="fa fa-sun"></span></button>
   <ul class="dropdown-menu dropdown-menu-end" aria-labelledby="dropdown-lightswitch">
@@ -69,20 +70,20 @@
 <p>This R package provides functions for:</p>
 <ul>
 <li>
-<em>sample demultiplexing</em> of base-called Nanopore sequencing data</li>
-<li>inferring specimen <em>barcode sequences</em> using a <a href="https://benjjneb.github.io/dada2" class="external-link">DADA2</a>-based <a href="https://markschl.github.io/DadaNanoBC/articles/workflow.html#clustering">clustering strategy</a> to accurately resolve haplotypes/polymorphic sequences</li>
-<li>automatic <em>taxonomic assignents</em> and recognition (down-ranking) of contaminant taxa</li>
+<strong>sample demultiplexing</strong> of base-called Nanopore sequencing data</li>
+<li>inferring specimen <strong>barcode sequences</strong> using a <a href="https://benjjneb.github.io/dada2" class="external-link">DADA2</a>-based <a href="https://markschl.github.io/DadaNanoBC/articles/workflow.html#clustering">clustering strategy</a> to accurately resolve haplotypes/polymorphic sequences</li>
+<li>automatic <strong>taxonomic assignents</strong> and recognition (down-ranking) of contaminant taxa</li>
 <li>detailed output files (comprehensive Excel table for curation, HTML report, BAM alignment files)</li>
 </ul>
-<p>A fully-fledged <a href="https://books.ropensci.org/targets" class="external-link">targets</a> pipeline connects these features to a comparehensive workflow.</p>
 <p><a href="https://markschl.github.io/DadaNanoBC/articles/workflow.html">See here for a comprehensive explanation</a></p>
+<p>A fully-fledged <a href="https://books.ropensci.org/targets" class="external-link">{targets}</a> pipeline is provided for simple execution of a standard workflow (see <a href="#running-the-targets-pipeline">below</a>).</p>
 <div class="section level2">
 <h2 id="what-type-of-data-does-it-work-with">What type of data does it work with?<a class="anchor" aria-label="anchor" href="#what-type-of-data-does-it-work-with"></a>
 </h2>
 <ul>
 <li>
 <em>Basecalled</em> amplicon reads with sample-specific tags attached to both ends (dual-indexed)</li>
-<li>Sufficient reads of sufficient quality (R10.4 chemistry)</li>
+<li>Reads of sufficient quality (R10.4 chemistry)</li>
 <li>Amplicon lengths of 0.5-1.5kb have been successfully tested</li>
 <li>Works with fixed- and variable-length amplicons from different taxonomic groups that can be multiplexed and analyzed separately</li>
 <li>different taxonomic database types can be auto-downloaded (more may be implemented in the future)</li>
@@ -95,9 +96,8 @@
 <li>An UNIX environment (Linux, OS X or Windows with WSL2) with <em>Bash</em>
 </li>
 <li>An <a href="https://cran.r-project.org" class="external-link">R</a> installation</li>
-<li>Some functions rely on third-party command-line programs: <a href="https://github.com/markschl/seqtool" class="external-link">seqtool</a> for primer trimming/demultiplexing, <a href="https://www.htslib.org" class="external-link">samtools</a> and <a href="https://github.com/lh3/minimap2" class="external-link">minimap2</a> for dealing with alignments and <a href="https://github.com/torognes/vsearch" class="external-link">VSEARCH</a> for sequence-based taxonomic assignments (see <a href="#installation-of-programs">installation of programs</a>)</li>
+<li>Four command-line programs (see <a href="#required-software">required software</a>); the package can always be installed without these, but error messages will appear when calling functions that rely on missing components.</li>
 </ul>
-<p>The package can always be installed; error messages may appear when calling functions that rely on missing components.</p>
 <p>If <a href="https://nanoporetech.com/document/data-analysis#basecalling-overview" class="external-link">basecalling</a> of the Nanopore data has not yet been done: an Nvidia GPU with Cuda support (details in <a href="basecalling.html">basecalling tutorial</a>).</p>
 </div>
 <div class="section level2">
@@ -111,94 +111,118 @@
 </ol>
 </div>
 <div class="section level2">
-<h2 id="running-the-pipeline">Running the pipeline<a class="anchor" aria-label="anchor" href="#running-the-pipeline"></a>
+<h2 id="installing-and-using-the-package">Installing and using the package<a class="anchor" aria-label="anchor" href="#installing-and-using-the-package"></a>
 </h2>
-<p>In the <code>R</code> console, install the necessary packages and initialize the pipeline within the desired directory.</p>
 <div class="sourceCode" id="cb1"><pre class="downlit sourceCode r">
-<code class="sourceCode R"><span><span class="fu">devtools</span><span class="fu">::</span><span class="fu">install_github</span><span class="op">(</span><span class="st">"markschl/DadaNanoBC"</span><span class="op">)</span></span>
-<span><span class="fu"><a href="https://rdrr.io/r/utils/install.packages.html" class="external-link">install.packages</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="st">"targets"</span>, <span class="st">"tarchetypes"</span>, <span class="st">"crew"</span><span class="op">)</span><span class="op">)</span></span>
-<span><span class="fu"><a href="https://rdrr.io/r/base/getwd.html" class="external-link">setwd</a></span><span class="op">(</span><span class="st">"path/to/pipeline"</span><span class="op">)</span></span>
-<span><span class="fu">DadaNanoBC</span><span class="fu">::</span><span class="fu"><a href="reference/init_pipeline.html">init_pipeline</a></span><span class="op">(</span><span class="op">)</span></span></code></pre></div>
-<p>Some files are created:</p>
-<pre><code>path/to/pipeline/
- ├─ _targets.R               Pipeline R code; execute with targets::tar_make()
- ├─ infer_barcodes           Script to execute the pipeline from Bash
- └─ analysis/
-    ├─ meta-ITS5-ITS4.xlsx   Metadata template (to be modified and renamed to 'meta.xlsx')
-    ├─ config.yaml           Pipeline configuration (to be modified)
-    └─ reads.fastq.gz        (base-called nanopore sequences to be placed here)</code></pre>
-<p>There may also be warnings about missing software (see also <a href="#installation-of-programs">installation of programs</a>).</p>
-<p>Next:</p>
-<ul>
-<li>Modify the example metadata file <code>meta-ITS5-ITS4.xlsx</code> to contain your primer sequences and sample metadata, and rename it to <code>meta.xlsx</code>
-</li>
-<li>Copy or move your <a href="https://markschl.github.io/DadaNanoBC/articles/basecalling.html">base-called</a> sequencing reads to <code>reads.fastq.gz</code>
-</li>
-<li>Adapt <code>config.yaml</code> to your needs; at the minimum, the ‘taxonony’ section needs to contain the correct taxonomic database.</li>
-</ul>
-<blockquote>
-<p><em>Note</em>: Consider running the pipeline at reduced read depth to check the data maybe adjust some settings afterwards. Inspect <code>report.html</code></p>
-</blockquote>
-<blockquote>
-<p><em>Note 2</em> Some settings such as a custom analysis directory, the number of parallel workers or program paths are configured using <code>r Sys.setenv(DadaNanoBC_&lt;setting&gt; = ...)</code>. You may as well edit the <code>_targets.R</code> file and modify some options below the <em>Pipeline definition</em> header.</p>
-</blockquote>
-<p>Run the pipeline:</p>
-<div class="sourceCode" id="cb3"><pre class="downlit sourceCode r">
-<code class="sourceCode R"><span><span class="fu">targets</span><span class="fu">::</span><span class="fu">tar_make</span><span class="op">(</span><span class="op">)</span></span></code></pre></div>
+<code class="sourceCode R"><span><span class="fu">devtools</span><span class="fu">::</span><span class="fu">install_github</span><span class="op">(</span><span class="st">"markschl/DadaNanoBC"</span><span class="op">)</span></span></code></pre></div>
+<p>The package documentation is <a href="https://markschl.github.io/DadaNanoBC">found here</a>.</p>
+<p>The package provides a mix of lower and higher level <a href="https://markschl.github.io/DadaNanoBC/reference/index.html">functions</a>, The core clustering function is <a href="https://markschl.github.io/DadaNanoBC/reference/infer_barcodes.html">infer_barcode</a> (detailed <a href="https://markschl.github.io/DadaNanoBC/articles/workflow.html#clustering">explanation here</a>). The high-level pipeline functions all have names starting with <code>do_</code> (e.g. <a href="https://markschl.github.io/DadaNanoBC/reference/do_trim_demux.html">do_trim_demux</a>).</p>
 </div>
 <div class="section level2">
-<h2 id="output">Output<a class="anchor" aria-label="anchor" href="#output"></a>
+<h2 id="running-the-targets-pipeline">Running the {targets} pipeline<a class="anchor" aria-label="anchor" href="#running-the-targets-pipeline"></a>
 </h2>
+<p>In the <code>R</code> console (for running in <em>Bash</em>, see <a href="#running-in-the-bash-console">below</a>):</p>
+<div class="sourceCode" id="cb2"><pre class="downlit sourceCode r">
+<code class="sourceCode R"><span><span class="fu"><a href="https://rdrr.io/r/base/getwd.html" class="external-link">setwd</a></span><span class="op">(</span><span class="st">"path/to/pipeline"</span><span class="op">)</span></span>
+<span><span class="fu">DadaNanoBC</span><span class="fu">::</span><span class="fu"><a href="reference/init_pipeline.html">init_pipeline</a></span><span class="op">(</span><span class="op">)</span></span></code></pre></div>
+<p>Some files are created, some need to be still placed</p>
+<pre><code>path/to/pipeline/
+ ├─ _targets.R               Pipeline R code
+ └─ analysis/
+    ├─ meta-ITS5-ITS4.xlsx   Metadata template (modify &amp; rename to 'meta.xlsx')
+    ├─ config.yaml           Pipeline configuration (modify)
+    └─ reads.fastq.gz    &lt;- Place base-called nanopore sequences here</code></pre>
+<p>There may also be warnings about missing software, which have to be handled (see <a href="#required-software">required software</a>).</p>
+<p>Next:</p>
+<ul>
+<li>Modify the example metadata file <code>meta-ITS5-ITS4.xlsx</code> to contain your primer sequences and sample metadata, and rename it to <strong>meta.xlsx</strong>
+</li>
+<li>Copy or move your <a href="https://markschl.github.io/DadaNanoBC/articles/basecalling.html">base-called</a> sequencing reads to <strong>reads.fastq.gz</strong>
+</li>
+<li>Adapt <strong>config.yaml</strong> to your needs; at the minimum, the <em>taxonony</em> section needs to contain the correct taxonomic database. &gt; Consider starting with a reduced read depth as in the example configuration (<code>max_sample_depth</code>/<code>max_contam_sample_depth</code>)</li>
+</ul>
+<p>Run the pipeline:</p>
+<div class="sourceCode" id="cb4"><pre class="downlit sourceCode r">
+<code class="sourceCode R"><span><span class="fu">targets</span><span class="fu">::</span><span class="fu">tar_make</span><span class="op">(</span><span class="op">)</span></span></code></pre></div>
+<blockquote>
+<p><em>Optional</em>: Modify the number of parallel processes before calling <code>tar_make</code>: <code>Sys.setenv('DadaNanoBC_WORKERS' = 8)</code></p>
+</blockquote>
+<div class="section level3">
+<h3 id="output">Output<a class="anchor" aria-label="anchor" href="#output"></a>
+</h3>
 <p>Some more files will appear in the analysis directory:</p>
 <ul>
 <li>
-<em>report.html</em> (<a href="https://markschl.github.io/DadaNanoBC/analysis-example.html">example report</a>): detailed HTML report, useful for troubleshooting</li>
+<strong>report.html</strong> (<a href="https://markschl.github.io/DadaNanoBC/analysis-example.html">example report</a>): detailed HTML report, useful for troubleshooting</li>
 <li>
-<em>report.xlsx</em>: Excel report with sequences and taxonomic assignments, which can be inspected for issues (see <a href="https://markschl.github.io/DadaNanoBC/articles/curation.html">curation</a>)</li>
+<strong>report.xlsx</strong>: Excel report with sequences and taxonomic assignments, which can be inspected for issues (see <a href="https://markschl.github.io/DadaNanoBC/articles/curation.html">curation</a>)</li>
 <li>
-<em>top_alignments</em> (and/or <em>alignments</em>, <em>separate_alignments</em> depending on configuration): aligned sequencing reads in BAM format, may be imported into sequence viewing/editing software such as Geneious/CLC Workbench/UGENE/IGV, etc.</li>
+<strong>separate_alignments</strong> (and/or <em>top_alignments</em>, <em>alignments</em> depending on configuration): aligned sequencing reads in BAM format, may be imported into sequence viewing/editing software such as Geneious/CLC Workbench/UGENE/IGV, etc.</li>
 <li>
-<em>tmp</em>: contains temporary (but sometimes useful) data such as the demultiplexed FASTQ sample files (sometimes <em>separate_alignments</em> with many small BAM files, depending on the configuration); if not needed you may delete the files</li>
+<strong>tmp</strong>: contains temporary (but sometimes useful) data such as the demultiplexed FASTQ sample files (sometimes <em>separate_alignments</em> with many small BAM files, depending on the configuration); if not needed you may delete the files</li>
 </ul>
-<p>After inspecting the HTML report and going through the Excel report, sequences can be exported as <a href="https://markschl.github.io/DadaNanoBC/articles/curation.html">detailed in the curation tutorial</a>.</p>
+<blockquote>
+<p>Inspect the HTML report for anomalies, maybe adjust some other settings then re-run with at higher depth (adjust/remove <code>max_sample_depth</code>/<code>max_contam_sample_depth</code>)</p>
+</blockquote>
+</div>
+<div class="section level3">
+<h3 id="curation">Curation<a class="anchor" aria-label="anchor" href="#curation"></a>
+</h3>
+<p>Excel report contains sequences and issue flags, which might have to be addressed before exporting the sequences.</p>
+<p><a href="https://markschl.github.io/DadaNanoBC/articles/curation.html">See curation tutorial</a></p>
+</div>
+<div class="section level3">
+<h3 id="running-a-different-analysis">Running a different analysis<a class="anchor" aria-label="anchor" href="#running-a-different-analysis"></a>
+</h3>
+<p>Prepare another directory with an appropriate <code>meta.xlsx</code>, <code>reads.fastq.gz</code> and <code>config.yaml</code>. Then, set the path and run the analysis. Taxonomic databases and other files in the <em>taxdb</em> directory is reused.</p>
+<div class="sourceCode" id="cb5"><pre class="downlit sourceCode r">
+<code class="sourceCode R"><span><span class="fu"><a href="https://rdrr.io/r/base/Sys.setenv.html" class="external-link">Sys.setenv</a></span><span class="op">(</span><span class="st">'DadaNanoBC_ANALYSIS_DIR'</span> <span class="op">=</span> <span class="st">'path/to/dir'</span><span class="op">)</span></span>
+<span><span class="fu">targets</span><span class="fu">::</span><span class="fu">tar_make</span><span class="op">(</span><span class="op">)</span></span></code></pre></div>
+</div>
 </div>
 <div class="section level2">
 <h2 id="running-in-the-bash-console">Running in the bash console<a class="anchor" aria-label="anchor" href="#running-in-the-bash-console"></a>
 </h2>
-<p>Instead of <code>targets::tar_make()</code>, there is also a script to execute the pipeline from the Bash console. It expects the path to the analysis directory containing <code>meta.xlsx</code>, <code>reads.fastq.gz</code> and <code>config.yaml</code>, and optionally also the number of workers:</p>
-<div class="sourceCode" id="cb4"><pre class="sourceCode sh"><code class="sourceCode bash"><span id="cb4-1"><a href="#cb4-1" tabindex="-1"></a><span class="ex">./infer_barcodes</span> analysis_dir <span class="pp">[</span><span class="ss">workers</span><span class="pp">]</span></span></code></pre></div>
-<p>This example runs the analysis in the default <em>analysis</em> directory with 8 parallel workers:</p>
-<div class="sourceCode" id="cb5"><pre class="sourceCode sh"><code class="sourceCode bash"><span id="cb5-1"><a href="#cb5-1" tabindex="-1"></a><span class="bu">cd</span> path/to/pipeline</span>
-<span id="cb5-2"><a href="#cb5-2" tabindex="-1"></a><span class="ex">./infer_barcodes</span> analysis 8</span></code></pre></div>
+<p>Install the package if not already done</p>
+<div class="sourceCode" id="cb6"><pre class="sourceCode sh"><code class="sourceCode bash"><span id="cb6-1"><a href="#cb6-1" tabindex="-1"></a><span class="ex">Rscript</span> <span class="at">-e</span> <span class="st">'devtools::install_github("markschl/DadaNanoBC")'</span></span></code></pre></div>
+<p>Initialize a directory where the pipeline is run</p>
+<div class="sourceCode" id="cb7"><pre class="sourceCode sh"><code class="sourceCode bash"><span id="cb7-1"><a href="#cb7-1" tabindex="-1"></a><span class="bu">cd</span> path/to/pipeline</span>
+<span id="cb7-2"><a href="#cb7-2" tabindex="-1"></a><span class="ex">Rscript</span> <span class="at">-e</span> <span class="st">'DadaNanoBC::init_pipeline(bash = TRUE)'</span></span></code></pre></div>
+<p>Then make sure there are the files <code>meta.xlsx</code>, <code>reads.fastq.gz</code> and <code>config.yaml</code> present in the analysis directory as described <a href="#running-the-targets-pipeline">above</a>.</p>
+<p>Run the pipeline (for the default <em>analysis</em> directory, may be <a href="#running-a-different-analysis">changed</a>):</p>
+<div class="sourceCode" id="cb8"><pre class="sourceCode sh"><code class="sourceCode bash"><span id="cb8-1"><a href="#cb8-1" tabindex="-1"></a><span class="ex">./infer_barcodes</span> analysis</span></code></pre></div>
+<p>Additional settings can be added afterwards, as in this more realistic example (see also <a href="#custom-program-location">custom program location</a>):</p>
+<div class="sourceCode" id="cb9"><pre class="sourceCode sh"><code class="sourceCode bash"><span id="cb9-1"><a href="#cb9-1" tabindex="-1"></a><span class="bu">cd</span> path/to/pipeline</span>
+<span id="cb9-2"><a href="#cb9-2" tabindex="-1"></a><span class="ex">./infer_barcodes</span> analysis WORKERS=8 vsearch=path/to/vsearch</span></code></pre></div>
 </div>
 <div class="section level2">
-<h2 id="installation-of-programs">Installation of programs<a class="anchor" aria-label="anchor" href="#installation-of-programs"></a>
+<h2 id="required-software">Required software<a class="anchor" aria-label="anchor" href="#required-software"></a>
 </h2>
+<p>The following tools are required: - <a href="https://github.com/markschl/seqtool" class="external-link">seqtool</a> for primer trimming/demultiplexing, - <a href="https://www.htslib.org" class="external-link">samtools</a> and <a href="https://github.com/lh3/minimap2" class="external-link">minimap2</a> - for dealing with alignments and - <a href="https://github.com/torognes/vsearch" class="external-link">VSEARCH</a> for sequence-based taxonomic assignments</p>
 <p>The above call to <code><a href="reference/init_pipeline.html">init_pipeline()</a></code> checks for available software and gives the URLs of missing software. The following does the same:</p>
-<div class="sourceCode" id="cb6"><pre class="downlit sourceCode r">
+<div class="sourceCode" id="cb10"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="fu">DadaNanoBC</span><span class="fu">::</span><span class="fu"><a href="reference/check_system_requirements.html">check_system_requirements</a></span><span class="op">(</span><span class="op">)</span></span></code></pre></div>
 <p>The message points to the download locations of missing tools. <em>Samtools</em>, <em>minimap2</em> and <em>VSEARCH</em> are available from different sources:</p>
 <p><em>Debian/Ubuntu</em> (including Windows WSL2 with these OSes):</p>
-<div class="sourceCode" id="cb7"><pre class="sourceCode sh"><code class="sourceCode bash"><span id="cb7-1"><a href="#cb7-1" tabindex="-1"></a><span class="fu">sudo</span> apt install <span class="at">-y</span> samtools minimap2 vsearch</span></code></pre></div>
+<div class="sourceCode" id="cb11"><pre class="sourceCode sh"><code class="sourceCode bash"><span id="cb11-1"><a href="#cb11-1" tabindex="-1"></a><span class="fu">sudo</span> apt install <span class="at">-y</span> samtools minimap2 vsearch</span></code></pre></div>
 <p><em>OS X with <a href="https://brew.sh" class="external-link">Homebrew</a>:</em></p>
-<div class="sourceCode" id="cb8"><pre class="sourceCode sh"><code class="sourceCode bash"><span id="cb8-1"><a href="#cb8-1" tabindex="-1"></a><span class="ex">brew</span> install samtools minimap2 vsearch</span></code></pre></div>
+<div class="sourceCode" id="cb12"><pre class="sourceCode sh"><code class="sourceCode bash"><span id="cb12-1"><a href="#cb12-1" tabindex="-1"></a><span class="ex">brew</span> install samtools minimap2 vsearch</span></code></pre></div>
 <p><em>Conda package manager</em> (e.g. <a href="https://conda-forge.org/download" class="external-link">Conda-forge</a>) (run in the <a href="#running-in-the-bash-console">bash console</a>):</p>
-<div class="sourceCode" id="cb9"><pre class="sourceCode sh"><code class="sourceCode bash"><span id="cb9-1"><a href="#cb9-1" tabindex="-1"></a><span class="ex">conda</span> install <span class="at">-y</span> <span class="at">-n</span> DadaNanoBC <span class="at">-c</span> bioconda samtools minimap2 vsearch</span>
-<span id="cb9-2"><a href="#cb9-2" tabindex="-1"></a><span class="ex">conda</span> activate DadaNanoBC</span>
-<span id="cb9-3"><a href="#cb9-3" tabindex="-1"></a><span class="co">#./infer_barcodes analysis_dir [workers]</span></span></code></pre></div>
+<div class="sourceCode" id="cb13"><pre class="sourceCode sh"><code class="sourceCode bash"><span id="cb13-1"><a href="#cb13-1" tabindex="-1"></a><span class="ex">conda</span> install <span class="at">-y</span> <span class="at">-n</span> DadaNanoBC <span class="at">-c</span> bioconda samtools minimap2 vsearch</span>
+<span id="cb13-2"><a href="#cb13-2" tabindex="-1"></a><span class="ex">conda</span> activate DadaNanoBC</span>
+<span id="cb13-3"><a href="#cb13-3" tabindex="-1"></a><span class="co">#./infer_barcodes analysis_dir [workers]</span></span></code></pre></div>
 <p>Instructions for downloading <em>Seqtool</em> are given on the <a href="https://github.com/markschl/seqtool/releases" class="external-link">Github site</a>.</p>
 <div class="section level3">
 <h3 id="custom-program-location">Custom program location<a class="anchor" aria-label="anchor" href="#custom-program-location"></a>
 </h3>
 <p>R needs to know about the tool’s locations. If not placed at a standard location, either the <code>PATH</code> environment variable needs adjustment, or the paths can be communicated to DadaNanoBC.</p>
 <p>In R (example with VSEARCH):</p>
-<div class="sourceCode" id="cb10"><pre class="downlit sourceCode r">
-<code class="sourceCode R"><span><span class="fu"><a href="https://rdrr.io/r/base/Sys.setenv.html" class="external-link">Sys.setenv</a></span><span class="op">(</span>DadaNanoBC_vsearch <span class="op">=</span> <span class="st">'~/Downloads/vsearch-2.30.2-linux-x86_64/bin/vsearch'</span><span class="op">)</span></span>
+<div class="sourceCode" id="cb14"><pre class="downlit sourceCode r">
+<code class="sourceCode R"><span><span class="fu">DadaNanoBC</span><span class="fu">::</span><span class="fu"><a href="reference/set_global_opts.html">set_global_opts</a></span><span class="op">(</span>vsearch <span class="op">=</span> <span class="st">'~/Downloads/vsearch-2.30.2-linux-x86_64/bin/vsearch'</span><span class="op">)</span></span>
 <span><span class="fu">tar_make</span><span class="op">(</span><span class="op">)</span></span></code></pre></div>
-<p>In the Bash console:</p>
-<div class="sourceCode" id="cb11"><pre class="sourceCode sh"><code class="sourceCode bash"><span id="cb11-1"><a href="#cb11-1" tabindex="-1"></a><span class="bu">cd</span> path/to/pipelinea</span>
-<span id="cb11-2"><a href="#cb11-2" tabindex="-1"></a><span class="bu">export</span> <span class="va">DadaNanoBC_vsearch</span><span class="op">=</span>~/Downloads/vsearch-2.30.2-linux-x86_64/bin/vsearch</span>
-<span id="cb11-3"><a href="#cb11-3" tabindex="-1"></a><span class="ex">./infer_barcodes</span> analysis 8</span></code></pre></div>
+<p>In the Bash console, simply add <code>program=...</code> after the <code>infer_barcodes</code> call:</p>
+<div class="sourceCode" id="cb15"><pre class="sourceCode sh"><code class="sourceCode bash"><span id="cb15-1"><a href="#cb15-1" tabindex="-1"></a><span class="bu">cd</span> path/to/pipeline</span>
+<span id="cb15-2"><a href="#cb15-2" tabindex="-1"></a><span class="ex">./infer_barcodes</span> analysis WORKERS=8 vsearch=~/Downloads/vsearch-2.30.2-linux-x86_64/bin/vsearch</span></code></pre></div>
 </div>
 </div>
 <div class="section level2">
@@ -213,7 +237,14 @@
 </ul>
 </div>
 </div>
-  </main><aside class="col-md-3"><div class="license">
+  </main><aside class="col-md-3"><div class="links">
+<h2 data-toc-skip>Links</h2>
+<ul class="list-unstyled">
+<li><a href="https://github.com/markschl/DadaNanoBC/" class="external-link">Browse source code</a></li>
+</ul>
+</div>
+
+<div class="license">
 <h2 data-toc-skip>License</h2>
 <ul class="list-unstyled">
 <li><a href="https://opensource.org/licenses/mit-license.php" class="external-link">MIT</a></li>
@@ -231,7 +262,7 @@
 <div class="developers">
 <h2 data-toc-skip>Developers</h2>
 <ul class="list-unstyled">
-<li>Markus Schlegel <br><small class="roles"> Author, maintainer </small>   </li>
+<li>Markus Schlegel <br><small class="roles"> Author, maintainer </small> <a href="https://orcid.org/0000-0003-3453-4783" target="orcid.widget" aria-label="ORCID" class="external-link"><span class="fab fa-orcid orcid" aria-hidden="true"></span></a>  </li>
 </ul>
 </div>
 

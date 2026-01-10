@@ -49,7 +49,7 @@ An easy way to find out the actual paths of the Nanopore data is to drag
 Basecalling on a remote server is slightly more complicated. This script
 shows how to do this on a SLURM server with a GPU node. The `remote_dir`
 must contain a job submission script (based on this
-[template](https://github.com/markschl/DadaNanoBC/templates/base_calling/slurm_submit_basecaller.sh));
+[template](https://github.com/markschl/DadaNanoBC/blob/main/templates/base_calling/slurm_submit_basecaller.sh));
 it can be copied to the remote directory e.g. using an FTP client;
 adjust the `dorado` path and your email address inside the script.
 
@@ -63,7 +63,7 @@ run_dir=analysis/$run_name
 # SSH login to HPC server
 ssh=user@server-address
 
-# Remote directory containing the submission script (see templates/slurm_submit_basecaller.sh)
+# Remote directory containing the submission script (slurm_submit_basecaller.sh)
 # The base-called data is placed in $remote_dir/$run_name
 remote_dir=projects/ONT
 

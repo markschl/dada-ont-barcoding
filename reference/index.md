@@ -33,8 +33,8 @@
   : Attempt at "fixing" the consensus sequence in a homopolymer region
 - [`get_gbif_taxa()`](https://markschl.github.io/DadaNanoBC/reference/get_gbif_taxa.md)
   : Match taxonomic names/lineages against the GBIF taxonomy
-- [`infer_barcodes()`](https://markschl.github.io/DadaNanoBC/reference/infer_barcodes.md)
-  : Infer barcode sequences from raw reads
+- [`infer_barcode()`](https://markschl.github.io/DadaNanoBC/reference/infer_barcode.md)
+  : Infer barcode sequence(s) from raw reads in a single sample
 - [`init_pipeline()`](https://markschl.github.io/DadaNanoBC/reference/init_pipeline.md)
   : Scaffold the Targets Pipeline
 - [`load_taxdb()`](https://markschl.github.io/DadaNanoBC/reference/load_taxdb.md)
@@ -47,7 +47,7 @@
   : Read primer information from Excel file
 - [`read_xlsx_sample_tab()`](https://markschl.github.io/DadaNanoBC/reference/read_xlsx_sample_tab.md)
   : Read sample metadata from Excel file
-- [`set_program_path()`](https://markschl.github.io/DadaNanoBC/reference/set_program_path.md)
-  : Set the path to one or more programs
+- [`set_global_opts()`](https://markschl.github.io/DadaNanoBC/reference/set_global_opts.md)
+  : Set global options
 - [`try_split_haplotypes()`](https://markschl.github.io/DadaNanoBC/reference/try_split_haplotypes.md)
   : Attempts splitting sequence cluster into two haplotypes.

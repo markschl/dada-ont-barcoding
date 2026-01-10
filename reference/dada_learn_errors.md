@@ -3,7 +3,7 @@
 Calls
 [dada2::learnErrors](https://rdrr.io/pkg/dada2/man/learnErrors.html)
 with settings adjusted for Nanopore data and the clustering procedure
-([infer_barcodes](https://markschl.github.io/DadaNanoBC/reference/infer_barcodes.md))
+([infer_barcode](https://markschl.github.io/DadaNanoBC/reference/infer_barcode.md))
 
 ## Usage
 

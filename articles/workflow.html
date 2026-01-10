@@ -46,6 +46,7 @@
 <li class="nav-item"><form class="form-inline" role="search">
  <input class="form-control" type="search" name="search-input" id="search-input" autocomplete="off" aria-label="Search site" placeholder="Search for" data-search-index="../search.json">
 </form></li>
+<li class="nav-item"><a class="external-link nav-link" href="https://github.com/markschl/DadaNanoBC/" aria-label="GitHub"><span class="fa fab fa-github fa-lg"></span></a></li>
 <li class="nav-item dropdown">
   <button class="nav-link dropdown-toggle" type="button" id="dropdown-lightswitch" data-bs-toggle="dropdown" aria-expanded="false" aria-haspopup="true" aria-label="Light switch"><span class="fa fa-sun"></span></button>
   <ul class="dropdown-menu dropdown-menu-end" aria-labelledby="dropdown-lightswitch">
@@ -70,7 +71,7 @@
       <h1>Workflow steps</h1>
             
       
-
+      <small class="dont-index">Source: <a href="https://github.com/markschl/DadaNanoBC/blob/main/vignettes/workflow.Rmd" class="external-link"><code>vignettes/workflow.Rmd</code></a></small>
       <div class="d-none name"><code>workflow.Rmd</code></div>
     </div>
 
@@ -82,14 +83,17 @@
 <ol style="list-style-type: decimal">
 <li>Search the primers and short sample indexes (located up-/downstream
 of the primer sequences) to group them by sample (de-multiplex); remove
-low-quality reads</li>
+low-quality reads (<code><a href="../reference/do_trim_demux.html">do_trim_demux()</a></code>)</li>
 <li>Infer the barcode sequences using a sequential procedure based on <a href="https://benjjneb.github.io/dada2" class="external-link">DADA2</a> and/or fixed-threshold
-clustering.</li>
+clustering (with <a href="https://www2.decipher.codes/Clusterize.html" class="external-link">DECIPHER</a>);
+compare them with already known sequences if present
+(<code><a href="../reference/infer_barcode.html">infer_barcode()</a></code> /
+<code><a href="../reference/do_infer_all_barcodes.html">do_infer_all_barcodes()</a></code>)</li>
 <li>Auto-assign the taxonomy and compare with the name given by
 morphological identification (if present) to validate and check for
-contamination.</li>
-<li>Compare with already known sequences (if present)</li>
-<li>Export summary table, which can be further manually curated</li>
+contamination (<code><a href="../reference/do_taxonomy.html">do_assign_compare_taxonomy()</a></code>)</li>
+<li>Export summary table, which can be further manually curated
+(<code><a href="../reference/create_excel_report.html">create_excel_report()</a></code>)</li>
 </ol>
 </div>
 <div class="section level2">
@@ -106,12 +110,13 @@ should be placed <em>at the end</em> in the sheet.</p>
 <div class="section level2">
 <h2 id="clustering">Clustering<a class="anchor" aria-label="anchor" href="#clustering"></a>
 </h2>
-<p>The basic procedure for the clustering is implemented by the <a href="https://markschl.github.io/DadaNanoBC/reference/infer_barcodes.html">infer_barcodes</a>
-function. The procedure starts with DADA2 clustering, followed by
-consensus building. Additional steps may follow depending on whether the
-consensus is unambiguous (each alignment column supported by enough
-identical bases), or not. The workflow is illustrated in this flowchart
-Relevant configuration options are shown in <em>grey</em>.</p>
+<p>The basic procedure for the clustering is implemented by the
+<code><a href="../reference/infer_barcode.html">infer_barcode()</a></code> function. The procedure starts with DADA2
+clustering, followed by consensus building. Additional steps may follow
+depending on whether the consensus is unambiguous (each alignment column
+supported by enough identical bases), or not. The workflow is
+illustrated in this flowchart. Relevant configuration options are shown
+in <em>grey</em>.</p>
 <p><img src="img/cluster-flowchart.png"></p>
 <div class="section level3">
 <h3 id="stepsstrategies">Steps/strategies<a class="anchor" aria-label="anchor" href="#stepsstrategies"></a>
@@ -122,14 +127,14 @@ Relevant configuration options are shown in <em>grey</em>.</p>
 <p><a href="https://benjjneb.github.io/dada2" class="external-link">DADA2</a> is a popular
 program for inferring sequence variants (ASV) in amplicon sequence data.
 The program requires that there are least a few error-free reads
-present. If there is not enough replication, fixed-threshold clustering
+present. If there is not enough duplication, fixed-threshold clustering
 (see <a href="#fixed-threshold-clustering">below</a>) is applied
 instead.</p>
 <p><img src="img/cluster-dada.png"></p>
-<p>The next step is to infer a <a href="#how-is-the-consensus-sequence-determined-">consensus sequence</a>
+<p>After obtaining the DADA2 ASV(s), the next step is to infer a <a href="#how-is-the-consensus-sequence-determined-">consensus sequence</a>
 for the ASV, which should usually be identical with the ASV sequence.
-Ambiguous bases in the consensus sequence are an indication of
-unresolved sequence variation, which we further address by attempging <a href="#haplotype-splitting">haplotype splitting</a> or by more sensitive
+Ambiguous bases in the consensus sequence may indicate unresolved
+sequence variation, which is further addressed by attempting <a href="#haplotype-splitting">haplotype splitting</a> or by more sensitive
 denoising (see <a href="#flowchart">flowchart</a>).</p>
 </div>
 <div class="section level4">
@@ -143,22 +148,23 @@ abundant sub-clusters with (ideally) <em>unambiguous</em> sequences. The
 splitting is done if the total number of ambiguous bases in the two
 resulting consensus sequences is smaller than the number of ambiguous
 bases in the original consensus of all combined reads (see also
-non-public function <a href="https://markschl.github.io/DadaNanoBC/reference/try_split_haplotypes.html">try_split_haplotypes</a>).</p>
-<p>This simple procedure is often successful and avoids the need for
-repeating the DADA2 denoising with higher sensitivity, or it may help in
-resolve InDel variation that might not be discovered by DADA2.</p>
+non-public function <code><a href="../reference/try_split_haplotypes.html">try_split_haplotypes()</a></code>).</p>
+<p>This simple procedure is often successful and avoids having to re-run
+DADA2 with higher sensitivity, or it may alo resolve InDel variation
+that DADA2 did not discover.</p>
 <p><img src="img/split-haplo.png"></p>
 </div>
 <div class="section level4">
 <h4 id="fixed-threshold-clustering">Fixed-threshold clustering<a class="anchor" aria-label="anchor" href="#fixed-threshold-clustering"></a>
 </h4>
-<p>Fixed-threshold clustering is applied for low-coverage samples that
-don’t have enough sequence duplication (see
-<code>dada_min_identical</code> and <code>dada_min_n0</code> settings in
-<a href="https://markschl.github.io/DadaNanoBC/reference/infer_barcodes.html">infer_barcodes</a>).</p>
-<p>By default, single-linkage is applied with a 97% identity threshold.
-This may result in an <span style="color:00897c">ambiguous</span>
-consensus sequence, which can still be manually inspected.</p>
+<p>Fixed-threshold clustering is applied to low-coverage samples with
+insufficient sequence duplication (see <code>dada_min_identical</code>
+and <code>dada_min_n0</code> settings in
+<code><a href="../reference/infer_barcode.html">infer_barcode()</a></code>.</p>
+<p>By default, single-linkage is applied with a 97% identity threshold
+(with <a href="https://www2.decipher.codes/Clusterize.html" class="external-link">DECIPHER</a>). This
+can result in an <span style="color:00897c">ambiguous</span> consensus
+sequence, which can still be manually inspected.</p>
 <p><img src="img/cluster-fixed.png"></p>
 </div>
 </div>
@@ -166,22 +172,16 @@ consensus sequence, which can still be manually inspected.</p>
 <h3 id="how-is-the-consensus-sequence-determined">How is the consensus sequence determined?<a class="anchor" aria-label="anchor" href="#how-is-the-consensus-sequence-determined"></a>
 </h3>
 <p>After DADA2 denoising, haplotype splitting and fixed-threshold
-clustering, the raw (quality-filtered) reads are always aligned to the
+clustering, the raw (quality-filtered) reads are aligned to the
 representative sequence (ASV or dominant unique sequence) with <a href="https://lh3.github.io/minimap2" class="external-link">Minimap2</a>.</p>
 <p>The consensus sequence is then obtained with <a href="https://www.htslib.org/doc/samtools-consensus.html" class="external-link">samtools
-consensus</a> using a frequency-based approach; no elaborate neural
-network-based inference is done (see e.g. <a href="https://github.com/nanoporetech/medaka" class="external-link">Medaka</a>). With the
-default settings in <code>infer_barcodes</code>, each base in the
-consensus sequence needs to be supported by at least 65% of the reads
-(weighted by quality scores by default) to be <em>unambiguous</em>.
-Otherwise, an <a href="https://en.wikipedia.org/wiki/Nucleic_acid_notation" class="external-link">ambiguous
+consensus</a> using a simple <strong>frequency-based</strong> approach.
+No elaborate neural network-based inference (see e.g. <a href="https://github.com/nanoporetech/medaka" class="external-link">Medaka</a>) is currently
+applied.</p>
+<p>By default, each base in the consensus sequence needs to be supported
+by at least 65% of the reads (weighted by quality scores) to be
+<em>unambiguous</em>. Otherwise, an <a href="https://en.wikipedia.org/wiki/Nucleic_acid_notation" class="external-link">ambiguous
 base</a> is shown, which may indicate unresolved sequence variation.</p>
-<p>The length of <strong>long homopolymer</strong> repeats is often not
-very consistent between different sequencing reads, which often results
-in <code>N</code> bases in the consensus. A simple frequency-based
-approach is used to “fix” this situation: the homopolymer length is
-taken from the <em>most abundant sequence</em> (see also non-public
-function <a href="https://markschl.github.io/DadaNanoBC/reference/fix_homopolymers.html">fix_homopolymers</a>).</p>
 <p>The correctness of the consensus is further ensured by re-mapping the
 reads against the consensus sequence. If necessary, this step is
 repeated until <em>samtools consensus</em> returns the same sequence in
@@ -191,6 +191,16 @@ two successive rounds.</p>
 a sufficient read depth and sequencing quality, it should usually be
 unambiguous and correct. For low-depth samples with ambiguities,
 alignments might be inspected manually.</p>
+<div class="section level4">
+<h4 id="homopolymers">Homopolymers<a class="anchor" aria-label="anchor" href="#homopolymers"></a>
+</h4>
+<p>The length of <strong>long homopolymer</strong> repeats is often not
+very consistent between different sequencing reads, which can result in
+<code>N</code> bases in the consensus. In this case, a simple
+frequency-based approach is used to “fix” this situation: the
+homopolymer length is taken from the <em>most abundant sequence</em>
+(see <code><a href="../reference/fix_homopolymers.html">fix_homopolymers()</a></code>).</p>
+</div>
 </div>
 <div class="section level3">
 <h3 id="taxa-grouping">Taxa grouping<a class="anchor" aria-label="anchor" href="#taxa-grouping"></a>
@@ -211,7 +221,7 @@ well distinghished from the target taxon.</p>
 <h2 id="taxonomic-assignments">Taxonomic assignments<a class="anchor" aria-label="anchor" href="#taxonomic-assignments"></a>
 </h2>
 <p>Taxonomic names are automatically assigned with the the <a href="https://doi.org/10.1101/074161" class="external-link">SINTAX algorithm</a> using a
-reference database (see <a href="https://markschl.github.io/DadaNanoBC/reference/infer_barcodes.html">do_assign_compare_taxonomy</a>).</p>
+reference database (see <code><a href="../reference/do_taxonomy.html">do_assign_compare_taxonomy()</a></code>).</p>
 <p>Second, taxonomic names associated with the specimens are compared to
 the sequence-based taxonomic assignments. From this, a <strong>taxonomic
 overlap</strong> is calculated, which is the <em>proportion of matching
@@ -221,8 +231,8 @@ these levels). The lineages are retrieved from the <a href="https://doi.org/10.1
 preparation or identification (or possibly the sequence-based
 identification), or the presence of contamination. Potential
 <strong>dominant contaminants</strong> are automatically flagged (see
-<em>details</em> section in <a href="https://markschl.github.io/DadaNanoBC/reference/infer_barcodes.html">do_assign_compare_taxonomy
-help page</a>).</p>
+<code><a href="../reference/do_taxonomy.html">do_assign_compare_taxonomy()</a></code>, <em>details</em>
+section).</p>
 </div>
   </main><aside class="col-md-3"><nav id="toc" aria-label="Table of contents"><h2>On this page</h2>
     </nav></aside>

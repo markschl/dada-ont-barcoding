@@ -26,14 +26,14 @@
 <url><loc>https://markschl.github.io/DadaNanoBC/reference/fix_homopolymers.html</loc></url>
 <url><loc>https://markschl.github.io/DadaNanoBC/reference/get_gbif_taxa.html</loc></url>
 <url><loc>https://markschl.github.io/DadaNanoBC/reference/index.html</loc></url>
-<url><loc>https://markschl.github.io/DadaNanoBC/reference/infer_barcodes.html</loc></url>
+<url><loc>https://markschl.github.io/DadaNanoBC/reference/infer_barcode.html</loc></url>
 <url><loc>https://markschl.github.io/DadaNanoBC/reference/init_pipeline.html</loc></url>
 <url><loc>https://markschl.github.io/DadaNanoBC/reference/load_taxdb.html</loc></url>
 <url><loc>https://markschl.github.io/DadaNanoBC/reference/parse_primer_tab.html</loc></url>
 <url><loc>https://markschl.github.io/DadaNanoBC/reference/parse_sample_tab.html</loc></url>
 <url><loc>https://markschl.github.io/DadaNanoBC/reference/read_xlsx_primer_tab.html</loc></url>
 <url><loc>https://markschl.github.io/DadaNanoBC/reference/read_xlsx_sample_tab.html</loc></url>
-<url><loc>https://markschl.github.io/DadaNanoBC/reference/set_program_path.html</loc></url>
+<url><loc>https://markschl.github.io/DadaNanoBC/reference/set_global_opts.html</loc></url>
 <url><loc>https://markschl.github.io/DadaNanoBC/reference/try_split_haplotypes.html</loc></url>
 </urlset>
 
