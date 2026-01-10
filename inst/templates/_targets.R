@@ -2,6 +2,7 @@
 
 #### Helper functions ##########################################################
 
+
 init_config <- function(config_file, analysis_dir) {
   config <- yaml::read_yaml(config_file)
   config$analysis_dir <- analysis_dir
@@ -42,12 +43,6 @@ init_config <- function(config_file, analysis_dir) {
       config$alignment_dir <- file.path(tmp_dir, 'separate_alignments')
     }
   }
-  # read metadata
-  meta_file <- file.path(analysis_dir, 'meta.xlsx')
-  config$sample_tab <- read_xlsx_sample_tab(meta_file, 'sample_list')
-  config$amplicons <- read_xlsx_primer_tab(meta_file,
-                                           'primers',
-                                           amplicons = levels(config$sample_tab$amplicon))
   # taxonomy assignment options
   stopifnot(!is.null(config$taxonomy))
   config$taxdb <- init_nested_opts(config$taxonomy, names(config$amplicons), description = 'taxonomy')
@@ -55,8 +50,6 @@ init_config <- function(config_file, analysis_dir) {
 }
 
 .config_sections <- c(
-  'sample_tab',
-  'amplicons',
   'demultiplex',
   'cluster',
   'taxdb',
@@ -259,9 +252,23 @@ unlist(list(
       )
     }
   ),
+  tar_target(
+    meta_file,
+    file.path(analysis_dir, 'meta.xlsx'),
+    format = 'file'
+  ),
+  tar_target(
+    sample_tab,
+    read_xlsx_sample_tab(meta_file, 'sample_list')
+  ),
+  tar_target(
+    amplicons,
+    read_xlsx_primer_tab(meta_file, 'primers',
+                         amplicons = levels(sample_tab$amplicon))
+  ),
   # Do primer search and demultiplexing
   tar_target(
-    reads_path,
+    reads_file,
     file.path(analysis_dir, 'reads.fastq.gz'),
     format = 'file'
   ),
@@ -269,9 +276,9 @@ unlist(list(
     trim_demux,
     run_with_cfg(
       do_trim_demux,
-      reads_path,
-      config_amplicons,
-      config_sample_tab,
+      reads_file,
+      amplicons,
+      sample_tab,
       out_dir = file.path(tmp_dir, 'demux'),
       cores = n_workers,
       cfg = config_demultiplex
