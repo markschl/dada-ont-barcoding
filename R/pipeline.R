@@ -36,7 +36,8 @@ init_pipeline <- function(path = '.',
     }
   }
   message('Files copied!')
-  if (analysis_dir != 'analysis') {
+  standard_dir <- analysis_dir == 'analysis'
+  if (!standard_dir) {
     message(
       sprintf('Running "Sys.setenv(DadaNanoBC_ANALYSIS_DIR = \'%s\')". ', analysis_dir),
       "This needs to be done if the analysis is not run in 'analysis')"
@@ -55,13 +56,11 @@ init_pipeline <- function(path = '.',
     sprintf("3. Adapt '%s/config.yaml' to your needs (at least the 'taxonony' section).\n",
             analysis_dir),
     if (bash) {
-      "4. `./infer_barcodes <analaxis_dir> WORKERS=<N> [more options]`"
-    } else {
-      paste(
-        "4. If necessary: `DadaNanoBC::set_global_opts(ANALYSIS_DIR = ..., WORKERS = <N>)`",
-        "5. Run `targets::tar_make()`",
-        sep='\n'
+      sprintf("4. `./infer_barcodes%s [WORKERS=<N>] [more options]`",
+              if (standard_dir) '' else sprintf(" ANALYSIS_DIR='%s'", analysis_dir)
       )
+    } else {
+      "4. Run `targets::tar_make()`"
     }
   )
 }

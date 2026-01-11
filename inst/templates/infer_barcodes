@@ -2,14 +2,6 @@
 
 set -euo pipefail
 
-if [[ "$#" < 1 ]]; then
-  echo "Usage: $0 analysis_dir [setting=value, ...]" >&2
-  exit 1
-fi
-
-export DadaNanoBC_ANALYSIS_DIR="$1"
-shift
-
 for arg in "$@"; do
   export DadaNanoBC_"$arg"
 done
