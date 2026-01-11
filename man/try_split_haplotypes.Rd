@@ -21,7 +21,7 @@ try_split_haplotypes(
 \arguments{
 \item{reads}{XStringQuality object}
 
-\item{d}{a data frame as returned by \link{dada2_denoise} and \link{ambig_consensus} with these columns:
+\item{d}{a data frame as returned by \link{dada2_denoise} and \code{ambig_consensus} with these columns:
 \itemize{
 \item id
 \item top_uniques

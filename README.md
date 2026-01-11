@@ -16,6 +16,17 @@ Although not tested, it should work for PacBio data as well.
 A fully-fledged [{targets}](https://books.ropensci.org/targets) pipeline is provided for simple
 execution of a standard workflow (see [below](#running-the-targets-pipeline)).
 
+**Table of contents:**
+
+- [What type of data does it work with?](#what-type-of-data-does-it-work-with)
+- [System requirements](#system-requirements)
+- [Preparation: lab work and basecalling](#preparation-lab-work-and-basecalling)
+- [Installing and using the package](#installing-and-using-the-package)
+- [Running the {targets} pipeline](#running-the-targets-pipeline)
+- [Running in the bash console](#running-in-the-bash-console)
+- [Required software](#required-software)
+- [Useful references](#useful-references)
+
 ## What type of data does it work with?
 
 - *Basecalled* amplicon reads with sample-specific tags attached to both ends
@@ -37,7 +48,7 @@ execution of a standard workflow (see [below](#running-the-targets-pipeline)).
 
 If [basecalling](https://nanoporetech.com/document/data-analysis#basecalling-overview)
 of the Nanopore data has not yet been done: an Nvidia GPU with Cuda support
-(details in [here](https://markschl.github.io/DadaNanoBC/articles/basecalling.html)).
+(details [here](https://markschl.github.io/DadaNanoBC/articles/basecalling.html)).
 
 ## Preparation: lab work and basecalling
 
@@ -72,7 +83,7 @@ DadaNanoBC::init_pipeline()
 
 Some files are created, some need to be still placed
 
-```
+```text
 path/to/pipeline/
  ├─ _targets.R               Pipeline R code
  └─ analysis/

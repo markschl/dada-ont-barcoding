@@ -685,7 +685,7 @@ dada2_denoise <- function(x,
 #' Attempts splitting sequence cluster into two haplotypes.
 #'
 #' @param reads XStringQuality object
-#' @param d a data frame as returned by [dada2_denoise] and [ambig_consensus] with these columns:
+#' @param d a data frame as returned by [dada2_denoise] and `ambig_consensus` with these columns:
 #' - id
 #' - top_uniques
 #' - consensus_ambigs

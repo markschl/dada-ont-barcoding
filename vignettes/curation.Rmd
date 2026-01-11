@@ -88,4 +88,4 @@ Not necessarily real *issues*:
 
 - **[consensus-diffs]:** At least one of the top taxon consensus sequences does not match the *dominant sequence*. This is not necessarily an issue (as the consensus is always reported) but is an indication for noisy data and/or low-depth samples.
 
-- **[homopolymer-fix]:** At least one of the top taxon consensus sequences contains one or several long homopolymer stretches (≥ 6 bp), where the consensus was not unambiguous, since Nanopore has difficulties in determining the correct repeat length. Instead of the consensensus, the sequence was taken from the prevalent sequencing read.
+- **[homopolymer-fix]:** At least one of the top taxon consensus sequences contains one or several long homopolymer stretches (≥ 6 bp), where the consensus was not unambiguous, since Nanopore has difficulties in determining the correct repeat length. Instead of the consensensus, the sequence was taken from the prevalent sequencing read (`fix_homopolymers()`).
