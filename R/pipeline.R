@@ -537,7 +537,7 @@ do_demux <- function(primer_search_fq,
   }
   t$category <- ifelse(is.na(t$sample_type) | t$sample_type == '',
                        'sample with reads',
-                       as.character(t$`sample type`))
+                       as.character(t$sample_type))
   t$category[is.na(t$reads_path)] <- 'no reads'
   t$category[is.na(t$sample)] <- 'unused index combination'
   t

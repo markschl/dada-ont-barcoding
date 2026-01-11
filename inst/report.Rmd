@@ -17,30 +17,8 @@ papersize: a4
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = FALSE)
-```
 
-```{css}
-h1 { font-size: 22px; }
-h2 { font-size: 18px; }
-h3 { font-size: 14px; }
-blockquote { font-size: 14px; }
-```
-
-```{r}
 library(targets)
-config <- tar_read(config)
-amplicons <- names(config$amplicons)
-```
-
-Run: *`r config$analysis_dir`*
-
-Date: *`r format(Sys.time(), '%d %B, %Y')`*
-
-Analyzed with *[DadaNanoBC](https://github.com/markschl/DadaNanoBC) v`r as.character(packageVersion('DadaNanoBC'))`*
-
-
-```{r load-software, message=F, warning=F}
-# R packages
 library(dplyr)
 library(ggplot2)
 library(patchwork)
@@ -80,6 +58,23 @@ pander::panderOptions('table.split.table', Inf)
 theme_set(ggplot_theme())
 ```
 
+```{css}
+h1 { font-size: 22px; }
+h2 { font-size: 18px; }
+h3 { font-size: 14px; }
+blockquote { font-size: 14px; }
+```
+
+```{r}
+config <- tar_read(config)
+```
+
+Run: *`r config$analysis_dir`*
+
+Date: *`r format(Sys.time(), '%d %B, %Y')`*
+
+Analyzed with *[DadaNanoBC](https://github.com/markschl/DadaNanoBC) v`r as.character(packageVersion('DadaNanoBC'))`*
+
 # The workflow (in short)
 
 1)  Search the primers and short sample indexes (located up-/downstream of the primer sequences)
@@ -92,16 +87,16 @@ See [documentation](https://markschl.github.io/DadaNanoBC) for more details.
 
 # Input/configuration
 
+```{r}
+amplicon_primers <- tar_read(amplicon_primers)
+amplicons <- names(amplicon_primers)
+```
+
 The input following files are needed:
 
 * Base-called sequences (`reads.fastq.gz`)
 * Metadata file (`meta.xlsx`)
 * Configuration file (*config.yaml*)
-
-```{r config}
-config_file = file.path(analysis_dir, 'config.yaml')
-opts = yaml::read_yaml(config_file)
-```
 
 The contents of *config.yaml*:
 
@@ -111,10 +106,11 @@ The contents of *config.yaml*:
 
 ## Samples
 
-The run has `r nrow(config$amplicons)` amplicon(s) with the following sample numbers:
+
+The run has `r nrow(amplicon_primers)` amplicon(s) with the following sample numbers:
 
 ```{r sample-tab, render=pander::pander}
-config$sample_tab %>% 
+tar_read(sample_tab) %>% 
   group_by(amplicon) %>% 
   summarise(
     `# samples` = n(),
@@ -132,7 +128,7 @@ The primers are defined in the *primers* sheet of the *meta.xlsx* input file. He
 
 ```{r render=pander::pander}
 # (we don't use map_dfr to avoid the purrr dependency)
-idxdist = bind_rows(lapply(config$amplicons, function(amp_pr) {
+idxdist = bind_rows(lapply(amplicon_primers, function(amp_pr) {
   bind_rows(lapply(amp_pr, function(d) {
     dst = adist(d$index)
     tibble(
@@ -574,15 +570,13 @@ hhist + hdepth +
 
 # Taxonomic assignments
 
-Taxonomic names are assigned with the the SINTAX algorithm using a bootstrap confidence threshold of `r config$taxonomy$confidence_threshold * 100` % (`confidence_threshold` setting).
+Taxonomic names are assigned with the the SINTAX algorithm using a bootstrap confidence threshold of `r config$taxonomy$confidence_threshold * 100` % (`confidence_threshold` setting). The composition per plate is shown in Figure \@ref(fig:tax-composition).
 
 > **Caution**: these automatic sequence-based assignments are not guaranteed to be correct, it is recommended to further validate them, e.g. using BLAST.
 
 ```{r assign-taxonomy, include=FALSE}
 seq_tab <- tar_read(taxonomy)$seq_tab
 ```
-
-Figure \@ref(fig:tax-overlap) summarizes the final taxonomic assignments. The taxonomic overlap (Figure \@ref(fig:tax-overlap)b) should mostly be near 100% (bars on right side).
 
 (ref:tax-composition) Taxonomic composition (based on barcode sequences) by amplicon and plate
 
@@ -626,23 +620,32 @@ ggplot(d, aes(as.factor(plate), fill=lineage)) +
         axis.text.x=element_text(angle=45, hjust=1, vjust=1, size=7))
 ```
 
-(ref:tax-overlap) Histograms showing the distribution of the taxonomic overlap between provided (e.g. morphological) and sequence-based taxonomic assignments (between 0 and 100%).
-
-```{r tax-overlap, warning=FALSE, fig.width=6.7, fig.height=1 + 0.5 * sqrt(length(unique(seq_tab$plate))), fig.cap='(ref:tax-overlap)'}
+```{r results='asis'}
 d.ov <- d %>% 
   filter(!is.na(nrank) & nrank >= 3) %>% 
   group_by(amplicon, plate) %>% 
-  mutate(category = if (mean(tax_overlap) > 0.5) 'looks ok' else 'low overlap')
-ggplot(d.ov, aes(tax_overlap, fill=category)) +
-  geom_histogram(binwidth=1/7) +
-  facet_wrap(~ sprintf('%s / p%s', amplicon, plate), scales='free_y') +
-  scale_y_continuous(expand = expansion(mult=c(0, 0.05))) +
-  scale_fill_manual(values = c('looks ok'='#a6bddb', 'low overlap'='orange')) +
-  coord_cartesian(xlim = c(0, 1)) +
-  theme_void() +
-  theme(legend.position='none',
-        panel.spacing.x = unit(0, 'mm'),
-        panel.border = element_rect(colour='black', size=0.5, fill=NA))
+  mutate(category = ifelse(mean(tax_overlap, na.rm=TRUE) > 0.5, 'looks ok', 'low overlap'))
+
+if (nrow(d.ov) > 0) {
+  cat('Figure \\@ref(fig:tax-overlap) summarizes the final taxonomic assignments. The taxonomic overlap (Figure \\@ref(fig:tax-overlap)b) should mostly be near 100% (bars on right side).\n')  
+}
+```
+
+(ref:tax-overlap) Histograms showing the distribution of the taxonomic overlap between provided (e.g. morphological) and sequence-based taxonomic assignments (between 0 and 100%).
+
+```{r tax-overlap, warning=FALSE, fig.width=6.7, fig.height=1 + 0.5 * sqrt(length(unique(seq_tab$plate))), fig.cap='(ref:tax-overlap)'}
+if (nrow(d.ov) > 0) {
+  ggplot(d.ov, aes(tax_overlap, fill=category)) +
+    geom_histogram(binwidth=1/7) +
+    facet_wrap(~ sprintf('%s / p%s', amplicon, plate), scales='free_y') +
+    scale_y_continuous(expand = expansion(mult=c(0, 0.05))) +
+    scale_fill_manual(values = c('looks ok'='#a6bddb', 'low overlap'='orange')) +
+    coord_cartesian(xlim = c(0, 1)) +
+    theme_void() +
+    theme(legend.position='none',
+          panel.spacing.x = unit(0, 'mm'),
+          panel.border = element_rect(colour='black', size=0.5, fill=NA))
+}
 ```
 
 ## Contamination
@@ -674,16 +677,19 @@ if (any(seq_tab$has_contamination)) {
 }
 ```
 
+```{r results='asis'}
+d <- seq_tab[!is.na(seq_tab$top_seq_known_seq_diffs),]
+d$known_seq_diffs <- ifelse(d$top_seq_known_seq_diffs > 5, '5+', as.character(d$top_seq_known_seq_diffs))
 
-# Comparison to known sequences
+if (nrow(d) > 0)
+  cat('# Comparison to known sequences
 
-In case of re-sequencing a specimen, there is the additional possibility of validating the result by calculating the number of differences (mismatches/gaps) (Figure \@ref(fig:known-seq-diffs). Known sequences are inserted in the *known sequence* column of the samples metadata table. Inconsistent barcode sequences might be investigated further. It is still possible, that e.g. the provided Sanger sequences have errors as well, it is best to also investigate the chromatograms in case of inconsistencies.
+In case of re-sequencing a specimen, there is the additional possibility of validating the result by calculating the number of differences (mismatches/gaps) (Figure \\@ref(fig:known-seq-diffs). Known sequences are inserted in the *known sequence* column of the samples metadata table. Inconsistent barcode sequences might be investigated further. It is still possible, that e.g. the provided Sanger sequences have errors as well, it is best to also investigate the chromatograms in case of inconsistencies.\n')
+```
 
 (ref:known-seq-diffs) Mismatches to already known sequences (in case of re-sequencing). The vertical red line indicates a critical sequencing depth threshold of `r config$output$report$low_abund_threshold` reads.
 
 ```{r known-seq-diffs, fig.width=5, fig.height=2.3, fig.cap='(ref:known-seq-diffs)'}
-d <- seq_tab[!is.na(seq_tab$top_seq_known_seq_diffs),]
-d$known_seq_diffs <- ifelse(d$top_seq_known_seq_diffs > 5, '5+', as.character(d$top_seq_known_seq_diffs))
 if (nrow(d) > 0) {
   h <- ggplot(d, aes(known_seq_diffs)) +
     geom_bar() +
@@ -697,7 +703,7 @@ if (nrow(d) > 0) {
     # scale_color_manual(values=cat.cols) +
     labs(x = 'Read depth', y = 'Mismatches to\nknown sequence') +
     theme(legend.position = 'right')
-
+  
   h + p +
     plot_layout(ncol=2, widths=c(3, 5)) +
     plot_annotation(tag_levels='a')
