@@ -2,7 +2,7 @@
 % Please edit documentation in R/pipeline.R
 \name{init_pipeline}
 \alias{init_pipeline}
-\title{Scaffold the Targets Pipeline}
+\title{Scaffold the targets Pipeline}
 \usage{
 init_pipeline(path = ".", bash = FALSE, analysis_dir = "analysis")
 }
@@ -15,6 +15,6 @@ that an \code{infer_barcodes} Bash script is copied along with \verb{_targets.R}
 \item{analysis_dir}{Analysis directory}
 }
 \description{
-Copies \verb{_targets.R} to current directory (or \code{path}) and initializes
-an analysis directory (without overwriting files).
+Copies the pipeline code (\verb{_targets.R}) to current directory (or \code{path})
+and initializes an analysis directory (without overwriting files).
 }

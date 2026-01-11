@@ -136,7 +136,7 @@ targets::tar_make()
 Install the package if not already done
 
 ```sh
-Rscript -e 'devtools::install_github("markschl/DadaNanoBC")'
+Rscript -e 'devtools::install_github("markschl/DadaNanoBC", upgrade = "never")'
 ```
 
 Initialize a directory where the pipeline is run
@@ -155,11 +155,16 @@ Run the pipeline (for the default *analysis* directory, may be [changed](#runnin
 ./infer_barcodes analysis
 ```
 
-Additional settings can be added afterwards, as in this more realistic example (see also [custom program location](#custom-program-location)):
+Additional settings can be added, as in this more complicated/realistic example (see also [custom program location](#custom-program-location)):
 
 ```sh
-cd path/to/pipeline
-./infer_barcodes analysis WORKERS=8 vsearch=path/to/vsearch
+./infer_barcodes WORKERS=8 vsearch=path/to/vsearch
+```
+
+[Different analysis](#running-a-different-analysis) in another directory:
+
+```sh
+./infer_barcodes ANALYSIS_DIR=path/to/analysis
 ```
 
 ## Required software
@@ -200,7 +205,6 @@ conda activate DadaNanoBC
 ```
 
 Instructions for downloading *Seqtool* are given on the [Github site](https://github.com/markschl/seqtool/releases).
-
 
 ### Custom program location
 

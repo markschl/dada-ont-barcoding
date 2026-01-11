@@ -1,8 +1,8 @@
 
-#' Scaffold the Targets Pipeline
+#' Scaffold the targets Pipeline
 #'
-#' Copies `_targets.R` to current directory (or `path`) and initializes
-#' an analysis directory (without overwriting files).
+#' Copies the pipeline code (`_targets.R`) to current directory (or `path`)
+#' and initializes an analysis directory (without overwriting files).
 #'
 #' @param path Where to create the `_targets.R` and other files
 #' @param bash (logical) if `TRUE`, initialize in "Bash mode", which means
@@ -35,15 +35,18 @@ init_pipeline <- function(path = '.',
       file.copy(source, target)
     }
   }
+  message('Files copied!')
   if (analysis_dir != 'analysis') {
     message(
       sprintf('Running "Sys.setenv(DadaNanoBC_ANALYSIS_DIR = \'%s\')". ', analysis_dir),
       "This needs to be done if the analysis is not run in 'analysis')"
     )
-    Sys.setenv(setNames(analysis_dir, 'DadaNanoBC_ANALYSIS_DIR'))
+    do.call(Sys.setenv, setNames(list(analysis_dir), 'DadaNanoBC_ANALYSIS_DIR'))
   }
+  message('Checking for external programs needed by DadaNanoBC:')
+  check_system_requirements()
   message(
-    "Files copied!\nNext steps:\n",
+    "\nNext steps:\n",
     sprintf("1. Modify the example metadata file '%s/meta-ITS5-ITS4.xlsx' to contain ",
             analysis_dir),
     "your primer sequences and sample metadata, and rename it to 'meta.xlsx'.\n",
@@ -61,8 +64,6 @@ init_pipeline <- function(path = '.',
       )
     }
   )
-  message('Checking for external programs needed by DadaNanoBC:')
-  check_system_requirements()
 }
 
 

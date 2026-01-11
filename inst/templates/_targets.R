@@ -3,7 +3,7 @@
 #### Helper functions ##########################################################
 
 
-init_config <- function(config_file, analysis_dir) {
+init_config <- function(config_file, analysis_dir, amplicons) {
   config <- yaml::read_yaml(config_file)
   config$analysis_dir <- analysis_dir
   # some minimal configuration defaults (needed in report, etc.)
@@ -45,7 +45,7 @@ init_config <- function(config_file, analysis_dir) {
   }
   # taxonomy assignment options
   stopifnot(!is.null(config$taxonomy))
-  config$taxdb <- init_nested_opts(config$taxonomy, names(config$amplicons), description = 'taxonomy')
+  config$taxdb <- init_nested_opts(config$taxonomy, amplicons, description = 'taxonomy')
   config
 }
 
@@ -102,8 +102,7 @@ run_with_cfg <- function(fn,
 get_taxdb <- function(taxdb_dir, cfg) {
   stopifnot(!is.null(cfg$db_url), length(cfg$db_url) >= 1,
             !is.null(cfg$db_type))
-  all_urls <- sort(c(cfg$db_url, cfg$db_tax_url))
-  db_hash <- tools::md5sum(bytes = charToRaw(paste(all_urls, collapse = '')))
+  db_hash <- md5(sort(c(cfg$db_url, cfg$db_tax_url)))
   db_file <- file.path(taxdb_dir, paste0(db_hash, '.fasta.gz'))
   if (!file.exists(db_file)) {
     load_taxdb(
@@ -179,24 +178,10 @@ recluster_contaminated <- function(seq_tab,
   seq_tab
 }
 
+md5 <- function(x) tools::md5sum(bytes = charToRaw(paste(x, collapse = '')))
+
 
 #### Pipeline definition #######################################################
-
-# settings
-# modify with Sys.getenv('DadaNanoBC_ANALYSIS_DIR' = ...)
-
-analysis_dir <- Sys.getenv('DadaNanoBC_ANALYSIS_DIR', 'analysis')
-n_workers <- as.integer(Sys.getenv('DadaNanoBC_WORKERS', max(parallel::detectCores(), 8)))
-tmp_dir = file.path(analysis_dir, 'tmp')
-taxdb_dir = 'taxdb'
-dir.create(taxdb_dir, FALSE, TRUE)
-
-message(sprintf(
-  "Running pipeline in '%s' with %d workers",
-  analysis_dir,
-  n_workers
-))
-
 
 # install pipeline packages if needed
 missing.pkgs <- setdiff(c('targets', 'tarchetypes', 'crew'),
@@ -208,6 +193,36 @@ if (length(missing.pkgs) > 0) {
 library(targets)
 library(tarchetypes)
 library(crew)
+
+# settings
+# modify with Sys.setenv('DadaNanoBC_ANALYSIS_DIR' = ...)
+
+analysis_dir <- Sys.getenv('DadaNanoBC_ANALYSIS_DIR', 'analysis')
+n_workers <- as.integer(Sys.getenv('DadaNanoBC_WORKERS', max(parallel::detectCores(), 8)))
+tmp_dir = file.path(analysis_dir, 'tmp')
+taxdb_dir = 'taxdb'
+dir.create(taxdb_dir, FALSE, TRUE)
+
+# set a different store for each analysis directory not called 'analysis',
+# so the pipeline can be re-run multiple times independently on different datasets,
+# if the user wants
+store <- '_targets'
+if (analysis_dir != 'analysis') {
+  name <- gsub(' ', '_', basename(analysis_dir))
+  if (analysis_dir != basename(analysis_dir)) {
+    name <- paste(abbreviate(name, 20), md5(analysis_dir), sep='_')
+  }
+  store <- paste0('_targets_', name)
+  tar_config_set(store = store)
+}
+
+message(sprintf(
+  "Running pipeline in '%s' with %d workers (intermediate store: %s)",
+  analysis_dir,
+  n_workers,
+  store
+))
+
 
 single_ctrl <- crew_controller_local('full', workers = 1, seconds_idle = 900)
 multi_ctrl <- crew_controller_local('parallel', workers = n_workers, seconds_idle = 900)
@@ -232,26 +247,9 @@ tar_option_set(
   seed = 42
 )
 
+
 unlist(list(
   # Read sample and primer information and initialize configuration
-  tar_target(
-    config_file,
-    file.path(analysis_dir, 'config.yaml'),
-    format = 'file'
-  ),
-  tar_target(
-    config,
-    init_config(config_file, analysis_dir)
-  ),
-  lapply(
-    .config_sections,
-    function(section) {
-      tar_target_raw(
-        paste0('config_', section),
-        substitute(config[[sec]], list(sec = section))
-      )
-    }
-  ),
   tar_target(
     meta_file,
     file.path(analysis_dir, 'meta.xlsx'),
@@ -262,22 +260,43 @@ unlist(list(
     read_xlsx_sample_tab(meta_file, 'sample_list')
   ),
   tar_target(
-    amplicons,
+    amplicon_primers,
     read_xlsx_primer_tab(meta_file, 'primers',
                          amplicons = levels(sample_tab$amplicon))
   ),
-  # Do primer search and demultiplexing
   tar_target(
-    reads_file,
-    file.path(analysis_dir, 'reads.fastq.gz'),
+    config_file,
+    file.path(analysis_dir, 'config.yaml'),
     format = 'file'
+  ),
+  tar_target(
+    config,
+    init_config(config_file, analysis_dir, amplicons = levels(sample_tab$amplicon))
+  ),
+  lapply(
+    .config_sections,
+    function(section) {
+      tar_target_raw(
+        paste0('config_', section),
+        substitute(config[[sec]], list(sec = section))
+      )
+    }
+  ),
+  # Do primer search and demultiplexing
+  tar_option_with(
+    trust_timestamps = TRUE,
+    tar_target(
+      reads_file,
+      file.path(analysis_dir, 'reads.fastq.gz'),
+      format = 'file'
+    )
   ),
   tar_target(
     trim_demux,
     run_with_cfg(
       do_trim_demux,
       reads_file,
-      amplicons,
+      amplicon_primers,
       sample_tab,
       out_dir = file.path(tmp_dir, 'demux'),
       cores = n_workers,
