@@ -21,6 +21,19 @@ A fully-fledged [{targets}](https://books.ropensci.org/targets) pipeline
 is provided for simple execution of a standard workflow (see
 [below](#running-the-targets-pipeline)).
 
+**Table of contents:**
+
+- [What type of data does it work
+  with?](#what-type-of-data-does-it-work-with)
+- [System requirements](#system-requirements)
+- [Preparation: lab work and
+  basecalling](#preparation-lab-work-and-basecalling)
+- [Installing and using the package](#installing-and-using-the-package)
+- [Running the {targets} pipeline](#running-the-targets-pipeline)
+- [Running in the bash console](#running-in-the-bash-console)
+- [Required software](#required-software)
+- [Useful references](#useful-references)
+
 ## What type of data does it work with?
 
 - *Basecalled* amplicon reads with sample-specific tags attached to both
@@ -44,7 +57,7 @@ is provided for simple execution of a standard workflow (see
 If
 [basecalling](https://nanoporetech.com/document/data-analysis#basecalling-overview)
 of the Nanopore data has not yet been done: an Nvidia GPU with Cuda
-support (details in
+support (details
 [here](https://markschl.github.io/DadaNanoBC/articles/basecalling.html)).
 
 ## Preparation: lab work and basecalling
@@ -87,12 +100,14 @@ DadaNanoBC::init_pipeline()
 
 Some files are created, some need to be still placed
 
-    path/to/pipeline/
-     ├─ _targets.R               Pipeline R code
-     └─ analysis/
-        ├─ meta-ITS5-ITS4.xlsx   Metadata template (modify & rename to 'meta.xlsx')
-        ├─ config.yaml           Pipeline configuration (modify)
-        └─ reads.fastq.gz    <- Place base-called nanopore sequences here
+``` text
+path/to/pipeline/
+ ├─ _targets.R               Pipeline R code
+ └─ analysis/
+    ├─ meta-ITS5-ITS4.xlsx   Metadata template (modify & rename to 'meta.xlsx')
+    ├─ config.yaml           Pipeline configuration (modify)
+    └─ reads.fastq.gz    <- Place base-called nanopore sequences here
+```
 
 There may also be warnings about missing software, which have to be
 handled (see [required software](#required-software)).
@@ -166,7 +181,7 @@ targets::tar_make()
 Install the package if not already done
 
 ``` sh
-Rscript -e 'devtools::install_github("markschl/DadaNanoBC")'
+Rscript -e 'devtools::install_github("markschl/DadaNanoBC", upgrade = "never")'
 ```
 
 Initialize a directory where the pipeline is run
@@ -187,12 +202,18 @@ Run the pipeline (for the default *analysis* directory, may be
 ./infer_barcodes analysis
 ```
 
-Additional settings can be added afterwards, as in this more realistic
+Additional settings can be added, as in this more complicated/realistic
 example (see also [custom program location](#custom-program-location)):
 
 ``` sh
-cd path/to/pipeline
-./infer_barcodes analysis WORKERS=8 vsearch=path/to/vsearch
+./infer_barcodes WORKERS=8 vsearch=path/to/vsearch
+```
+
+[Different analysis](#running-a-different-analysis) in another
+directory:
+
+``` sh
+./infer_barcodes ANALYSIS_DIR=path/to/analysis
 ```
 
 ## Required software

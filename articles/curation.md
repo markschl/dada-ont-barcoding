@@ -150,4 +150,5 @@ Not necessarily real *issues*:
   where the consensus was not unambiguous, since Nanopore has
   difficulties in determining the correct repeat length. Instead of the
   consensensus, the sequence was taken from the prevalent sequencing
-  read.
+  read
+  ([`fix_homopolymers()`](https://markschl.github.io/DadaNanoBC/reference/fix_homopolymers.md)).

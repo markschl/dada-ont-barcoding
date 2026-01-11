@@ -36,7 +36,7 @@
 - [`infer_barcode()`](https://markschl.github.io/DadaNanoBC/reference/infer_barcode.md)
   : Infer barcode sequence(s) from raw reads in a single sample
 - [`init_pipeline()`](https://markschl.github.io/DadaNanoBC/reference/init_pipeline.md)
-  : Scaffold the Targets Pipeline
+  : Scaffold the targets Pipeline
 - [`load_taxdb()`](https://markschl.github.io/DadaNanoBC/reference/load_taxdb.md)
   : Download a taxonomic database and save it in UTAX format
 - [`parse_primer_tab()`](https://markschl.github.io/DadaNanoBC/reference/parse_primer_tab.md)

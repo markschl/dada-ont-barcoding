@@ -30,7 +30,7 @@ try_split_haplotypes(
 
   a data frame as returned by
   [dada2_denoise](https://markschl.github.io/DadaNanoBC/reference/dada2_denoise.md)
-  and ambig_consensus with these columns:
+  and `ambig_consensus` with these columns:
 
   - id
 

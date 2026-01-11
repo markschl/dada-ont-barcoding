@@ -1,7 +1,7 @@
-# Scaffold the Targets Pipeline
+# Scaffold the targets Pipeline
 
-Copies `_targets.R` to current directory (or `path`) and initializes an
-analysis directory (without overwriting files).
+Copies the pipeline code (`_targets.R`) to current directory (or `path`)
+and initializes an analysis directory (without overwriting files).
 
 ## Usage
 
